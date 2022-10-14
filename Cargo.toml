@@ -11,3 +11,4 @@ opt-level = 3
 
 [dependencies]
 bevy = { version = "0.8.x" }
+bevy-inspector-egui = { version = "0.13.x" }
