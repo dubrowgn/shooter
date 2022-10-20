@@ -54,7 +54,7 @@ fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
 		.insert(Player)
 		.insert(Name::new("Player"))
 		.insert_bundle(SpriteSheetBundle {
-			texture_atlas: textures.get("player_blue").unwrap().clone(),
+			texture_atlas: textures.get("player_purple").unwrap().clone(),
 			..default()
 		})
 		.insert(RigidBody::KinematicVelocityBased)
@@ -67,15 +67,19 @@ fn load_assets(
 	assets: Res<AssetServer>,
 	mut atlases: ResMut<Assets<TextureAtlas>>
 ) {
-	let img: Handle<Image> = assets.load("image/player_blue.png");
-	let handle = atlases.add(TextureAtlas::from_grid(
-		img,
+	let img: Handle<Image> = assets.load("image/players.png");
+	let slice = |row: u16| TextureAtlas::from_grid_with_padding(
+		img.clone(),
 		Vec2::splat(256.0),
 		3,
-		1
-	));
-
-	textures.insert("player_blue".to_string(), handle.clone());
+		1,
+		Vec2::ZERO,
+		Vec2::new(0.0, row as f32 * 256.0),
+	);
+	textures.insert("player_blue".into(), atlases.add(slice(0)));
+	textures.insert("player_red".into(), atlases.add(slice(1)));
+	textures.insert("player_green".into(), atlases.add(slice(2)));
+	textures.insert("player_purple".into(), atlases.add(slice(3)));
 }
 
 fn handle_input(
