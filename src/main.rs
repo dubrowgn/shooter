@@ -120,30 +120,33 @@ fn spawn_shot(
 	let (player_t, mut player) = q_player.single_mut();
 
 	player.shot_timer.tick(time.delta());
-	if !player.shot_timer.just_finished() {
+	let shots = player.shot_timer.times_finished_this_tick();
+	if shots < 1 {
 		return;
 	}
 
 	let dir = player_t.right().truncate();
 	let pos = player_t.translation.truncate() + dir * 96.0 + 26.0;
-	let speed: f32 = 1400.0;
+	let speed: f32 = 2700.0;
 
-	cmds.spawn()
-		.insert(Shot)
-		.insert(Name::new("Shot"))
-		.insert_bundle(SpriteSheetBundle {
-			texture_atlas: textures.get("shot_purple").unwrap().clone(),
-			transform: Transform::from_xyz(pos.x, pos.y, LAYER_PLAYER),
-			..default()
-		})
-		.insert(RigidBody::Dynamic)
-		.insert(Collider::ball(26.0))
-		.insert(Velocity::linear(dir * speed))
-		.insert(Restitution::coefficient(1.0))
-		.insert(Friction {
-			coefficient: 0.0,
-			combine_rule: CoefficientCombineRule::Min,
-		});
+	for _ in 0..shots {
+		cmds.spawn()
+			.insert(Shot)
+			.insert(Name::new("Shot"))
+			.insert_bundle(SpriteSheetBundle {
+				texture_atlas: textures.get("shot_purple").unwrap().clone(),
+				transform: Transform::from_xyz(pos.x, pos.y, LAYER_PLAYER),
+				..default()
+			})
+			.insert(RigidBody::Dynamic)
+			.insert(Collider::ball(26.0))
+			.insert(Velocity::linear(dir * speed))
+			.insert(Restitution::coefficient(1.0))
+			.insert(Friction {
+				coefficient: 0.0,
+				combine_rule: CoefficientCombineRule::Min,
+			});
+	}
 }
 
 #[derive(Component, Default, Reflect)]
@@ -300,7 +303,10 @@ fn handle_input(
 
 	// shooting?
 	if btns.just_pressed(MouseButton::Left) {
+		let dur = player.shot_timer.duration();
+		player.shot_timer.reset();
 		player.shot_timer.unpause();
+		player.shot_timer.set_elapsed(dur);
 	} else if btns.just_released(MouseButton::Left) {
 		player.shot_timer.pause();
 	}
