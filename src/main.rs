@@ -35,15 +35,17 @@ fn main() {
 		.add_plugin(InspectableRapierPlugin)
 		.add_plugin(WorldInspectorPlugin::new())
 		// startup systems
-		.add_startup_system_to_stage(StartupStage::PreStartup, load_assets)
+		.add_startup_system(load_assets)
 		.add_startup_system(spawn_camera)
-		.add_startup_system(spawn_player)
-		.add_startup_system(spawn_walls)
-		.add_startup_system_to_stage(StartupStage::PostStartup, spawn_shot)
+		.add_startup_system(spawn_player.after(load_assets))
+		.add_startup_system(spawn_walls.after(load_assets))
 		// systems
-		.add_system_to_stage(CoreStage::PreUpdate, handle_input)
-		.add_system(spawn_shot)
-		.add_system_to_stage(CoreStage::PostUpdate, update_camera)
+		.add_system(handle_input)
+		.add_system(spawn_shot
+			.after(handle_input)
+			.before(update_camera)
+		)
+		.add_system(update_camera)
 		// run
 		.run();
 }
@@ -186,7 +188,7 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 			..default()
 		})
 		.insert(RigidBody::Fixed)
-		.insert(Collider::cuboid(96.0, 1088.0));
+		.insert(Collider::cuboid(96.0, 1280.0));
 
 	cmds.spawn()
 		.insert(Wall)
@@ -199,7 +201,7 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 			..default()
 		})
 		.insert(RigidBody::Fixed)
-		.insert(Collider::cuboid(96.0, 1088.0));
+		.insert(Collider::cuboid(96.0, 1280.0));
 
 	cmds.spawn()
 		.insert(Wall)
