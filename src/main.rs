@@ -3,7 +3,7 @@ use bevy::{
 	prelude::*,
 	utils::{Duration, HashMap},
 };
-use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy_inspector_egui::{WorldInspectorPlugin};
 use bevy_inspector_egui_rapier::InspectableRapierPlugin;
 use bevy_rapier2d::prelude::*;
 
@@ -39,9 +39,10 @@ fn main() {
 		.add_startup_system(spawn_camera)
 		.add_startup_system(spawn_player.after(load_assets))
 		.add_startup_system(spawn_walls.after(load_assets))
+		.add_startup_system(sys_spawn_shots.after(load_assets))
 		// systems
 		.add_system(handle_input)
-		.add_system(spawn_shot
+		.add_system(sys_spawn_shot
 			.after(handle_input)
 			.before(update_camera)
 		)
@@ -76,6 +77,7 @@ fn update_camera(
 }
 
 #[derive(Component, Default, Reflect)]
+#[reflect(Component)]
 struct Player {
 	shot_timer: Timer,
 }
@@ -114,40 +116,54 @@ fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
 struct Shot;
 
 fn spawn_shot(
+	cmds: &mut Commands,
+	textures: &Res<Textures>,
+	pos: Vec2,
+	dir: Vec2,
+) {
+	let speed: f32 = 2700.0;
+
+	cmds.spawn()
+		.insert(Shot)
+		.insert(Name::new("Shot"))
+		.insert_bundle(SpriteSheetBundle {
+			texture_atlas: textures.get("shot_purple").unwrap().clone(),
+			transform: Transform::from_xyz(pos.x, pos.y, LAYER_PLAYER),
+			..default()
+		})
+		.insert(RigidBody::Dynamic)
+		.insert(Collider::ball(26.0))
+		.insert(Velocity::linear(dir * speed))
+		.insert(Restitution::coefficient(1.0))
+		.insert(Friction {
+			coefficient: 0.0,
+			combine_rule: CoefficientCombineRule::Min,
+		});
+}
+
+fn sys_spawn_shot(
 	mut cmds: Commands,
 	textures: Res<Textures>,
 	time: Res<Time>,
 	mut q_player: Query<(&Transform, &mut Player)>
 ) {
 	let (player_t, mut player) = q_player.single_mut();
+	let dir = player_t.right().truncate();
+	let pos = player_t.translation.truncate() + dir * 96.0 + 26.0;
 
 	player.shot_timer.tick(time.delta());
 	let shots = player.shot_timer.times_finished_this_tick();
-	if shots < 1 {
-		return;
-	}
-
-	let dir = player_t.right().truncate();
-	let pos = player_t.translation.truncate() + dir * 96.0 + 26.0;
-	let speed: f32 = 2700.0;
-
 	for _ in 0..shots {
-		cmds.spawn()
-			.insert(Shot)
-			.insert(Name::new("Shot"))
-			.insert_bundle(SpriteSheetBundle {
-				texture_atlas: textures.get("shot_purple").unwrap().clone(),
-				transform: Transform::from_xyz(pos.x, pos.y, LAYER_PLAYER),
-				..default()
-			})
-			.insert(RigidBody::Dynamic)
-			.insert(Collider::ball(26.0))
-			.insert(Velocity::linear(dir * speed))
-			.insert(Restitution::coefficient(1.0))
-			.insert(Friction {
-				coefficient: 0.0,
-				combine_rule: CoefficientCombineRule::Min,
-			});
+		spawn_shot(&mut cmds, &textures, pos, dir);
+	}
+}
+
+fn sys_spawn_shots(
+	mut cmds: Commands,
+	textures: Res<Textures>,
+) {
+	for i in -512..=512 {
+		spawn_shot(&mut cmds, &textures, Vec2::Y * i as f32, Vec2::X);
 	}
 }
 
