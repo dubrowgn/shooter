@@ -7,6 +7,7 @@ use bevy_prototype_lyon::{
 	prelude::{GeometryBuilder, DrawMode, StrokeMode},
 	entity::ShapeBundle,
 };
+use crate::debug::Debug;
 use crate::layer::Layer;
 use crate::movement::Position;
 use parry2d::{
@@ -113,15 +114,36 @@ fn shape_to_bundle(shape: &dyn Shape, t: &Transform) -> ShapeBundle {
 	)
 }
 
+#[derive(Component, Default, Reflect)]
+#[reflect(Component)]
+pub struct CollidableDebug;
+
 pub fn sys_collide_debug_add(
 	mut cmds: Commands,
+	debug: Res<Debug>,
 	q_added: Query<(Entity, &Collidable, &Transform), Added<Collidable>>
 ) {
 	for (ent, col, t) in &q_added {
 		let id = cmds.spawn()
+			.insert(CollidableDebug)
+			.insert(Name::new("CollidableDebug"))
 			.insert_bundle(shape_to_bundle(col.shape.as_ref(), t))
+			.insert(Visibility { is_visible: debug.enabled })
 			.id();
 		cmds.entity(ent)
 			.add_child(id);
+	}
+}
+
+pub fn sys_collide_debug_toggle(
+	debug: Res<Debug>,
+	mut q_collide: Query<&mut Visibility, With<CollidableDebug>>,
+) {
+	if !debug.is_changed() {
+		return;
+	}
+
+	for mut vis in &mut q_collide {
+		vis.is_visible = debug.enabled;
 	}
 }

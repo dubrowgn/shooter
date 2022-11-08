@@ -1,4 +1,5 @@
 mod collide;
+mod debug;
 mod layer;
 mod movement;
 
@@ -7,9 +8,16 @@ use bevy::{
 	prelude::*,
 	utils::{Duration, HashMap},
 };
-use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy_inspector_egui::{WorldInspectorPlugin, WorldInspectorParams};
 use bevy_prototype_lyon::plugin::ShapePlugin;
-use collide::{Collidable, EntityHandle, QueryCompositeShape, sys_collide_debug_add};
+use collide::{
+	Collidable,
+	EntityHandle,
+	QueryCompositeShape,
+	sys_collide_debug_add,
+	sys_collide_debug_toggle,
+};
+use debug::Debug;
 use iyes_loopless::prelude::*;
 use layer::Layer;
 use movement::{Position, sys_write_back, Velocity};
@@ -31,6 +39,12 @@ fn main() {
 		.register_type::<Velocity>()
 		// resources
 		.insert_resource(ClearColor(Color::rgb(0.2, 0.2, 0.2)))
+		.insert_resource(Debug { enabled: false })
+		.insert_resource({
+			let mut params = WorldInspectorParams::default();
+			params.enabled = false;
+			params
+		})
 		.insert_resource(WindowDescriptor {
 			title: "shooter".into(),
 			..default()
@@ -62,6 +76,8 @@ fn main() {
 		// systems
 		.add_system(handle_input)
 		.add_system(sys_collide_debug_add)
+		.add_system(sys_collide_debug_toggle)
+		.add_system(sys_inspector_toggle)
 		.add_system(sys_spawn_shot
 			.after(handle_input)
 			.before(update_camera)
@@ -69,6 +85,15 @@ fn main() {
 		.add_system(update_camera)
 		// run
 		.run();
+}
+
+pub fn sys_inspector_toggle(
+	debug: Res<Debug>,
+	mut inspector: ResMut<WorldInspectorParams>,
+) {
+	if !debug.is_changed() {
+		inspector.enabled = debug.enabled;
+	}
 }
 
 type Textures = HashMap<String, Handle<TextureAtlas>>;
@@ -438,6 +463,7 @@ fn load_assets(
 fn handle_input(
 	keys: Res<Input<KeyCode>>,
 	btns: Res<Input<MouseButton>>,
+	mut debug: ResMut<Debug>,
 	mut windows: ResMut<Windows>,
 	q_camera: Query<(&Camera, &GlobalTransform), With<Camera>>,
 	mut q_player: Query<(&mut Velocity, &mut Transform, &mut Player)>,
@@ -447,6 +473,10 @@ fn handle_input(
 
 		let win: &mut Window = windows.primary_mut();
 		win.set_mode(if win.mode() == Windowed { BorderlessFullscreen } else { Windowed });
+	}
+
+	if keys.just_released(KeyCode::F12) {
+		debug.enabled = !debug.enabled;
 	}
 
 	let (cam, cam_t) = q_camera.single();
