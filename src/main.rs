@@ -278,7 +278,7 @@ fn sys_spawn_shot(
 ) {
 	let (player_t, mut player) = q_player.single_mut();
 	let dir = player_t.right().truncate();
-	let pos = player_t.translation.truncate() + dir * 96.0 + 26.0;
+	let pos = player_t.translation.truncate() + dir * (96.0 + 26.0);
 
 	player.shot_timer.tick(time.delta());
 	let shots = player.shot_timer.times_finished_this_tick();
