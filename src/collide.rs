@@ -1,9 +1,18 @@
-use bevy::ecs::{ component::Component, entity::Entity, query::WorldQuery, system::Query };
+use bevy::{
+	ecs::query::WorldQuery,
+	prelude::*,
+};
+use bevy_prototype_lyon::{
+	shapes::{Circle, RectangleOrigin, Rectangle},
+	prelude::{GeometryBuilder, DrawMode, StrokeMode},
+	entity::ShapeBundle,
+};
+use crate::layer::Layer;
 use crate::movement::Position;
 use parry2d::{
 	math::{Real, Isometry},
 	partitioning::{Qbvh, IndexedData},
-	shape::{SharedShape, Shape, TypedSimdCompositeShape},
+	shape::{SharedShape, Shape, TypedShape, TypedSimdCompositeShape},
 	utils::DefaultStorage,
 };
 
@@ -82,5 +91,37 @@ impl<'a, 'w, 's, Q: WorldQuery, F: WorldQuery> TypedSimdCompositeShape for Query
 
 	fn typed_qbvh(&self) -> &Qbvh<EntityHandle> {
 		&self.bvh
+	}
+}
+
+fn shape_to_bundle(shape: &dyn Shape, t: &Transform) -> ShapeBundle {
+	let builder = GeometryBuilder::new();
+	match shape.as_typed_shape() {
+		TypedShape::Ball(b) => builder.add(&Circle {
+			center: Vec2::ZERO,
+			radius:b.radius,
+		}),
+		TypedShape::Cuboid(c) => builder.add(&Rectangle {
+			extents: 2.0 * Vec2::new(c.half_extents.x, c.half_extents.y),
+			origin: RectangleOrigin::Center,
+		}),
+		_ => panic!("Unimplemented shape type {:?}", shape.shape_type()),
+	}.build(
+		DrawMode::Stroke(StrokeMode::color(Color::rgba(0.8, 0.8, 0.0, 0.35))),
+		Transform::from_xyz(0.0, 0.0, Layer::FG)
+			.with_rotation(-t.rotation),
+	)
+}
+
+pub fn sys_collide_debug_add(
+	mut cmds: Commands,
+	q_added: Query<(Entity, &Collidable, &Transform), Added<Collidable>>
+) {
+	for (ent, col, t) in &q_added {
+		let id = cmds.spawn()
+			.insert_bundle(shape_to_bundle(col.shape.as_ref(), t))
+			.id();
+		cmds.entity(ent)
+			.add_child(id);
 	}
 }

@@ -1,4 +1,5 @@
 mod collide;
+mod layer;
 mod movement;
 
 use bevy::{
@@ -7,8 +8,10 @@ use bevy::{
 	utils::{Duration, HashMap},
 };
 use bevy_inspector_egui::WorldInspectorPlugin;
-use collide::{Collidable, EntityHandle, QueryCompositeShape};
+use bevy_prototype_lyon::plugin::ShapePlugin;
+use collide::{Collidable, EntityHandle, QueryCompositeShape, sys_collide_debug_add};
 use iyes_loopless::prelude::*;
+use layer::Layer;
 use movement::{Position, sys_write_back, Velocity};
 use parry2d::{
 	na,
@@ -18,10 +21,6 @@ use parry2d::{
 
 const HALF_TURN: f32 = std::f32::consts::PI;
 const QUARTER_TURN: f32 = HALF_TURN / 2.0;
-
-const LAYER_BG: f32 = 1.0;
-const LAYER_PLAYER: f32 = 2.0;
-const LAYER_SHOT: f32 = 3.0;
 
 fn main() {
 	App::new()
@@ -40,6 +39,7 @@ fn main() {
 		.insert_resource(Walls::new())
 		// plugins
 		.add_plugins(DefaultPlugins)
+		.add_plugin(ShapePlugin)
 		.add_plugin(WorldInspectorPlugin::new())
 		// startup systems
 		.add_startup_system(load_assets)
@@ -61,6 +61,7 @@ fn main() {
 		)
 		// systems
 		.add_system(handle_input)
+		.add_system(sys_collide_debug_add)
 		.add_system(sys_spawn_shot
 			.after(handle_input)
 			.before(update_camera)
@@ -147,7 +148,7 @@ fn sys_move_shots(
 
 				if shot.bounces == 0 {
 					cmds.entity(ent)
-						.despawn();
+						.despawn_recursive();
 					break;
 				} else {
 					shot.bounces -= 1;
@@ -234,7 +235,7 @@ fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
 		.insert(Name::new("Player"))
 		.insert_bundle(SpriteSheetBundle {
 			texture_atlas: textures.get("player_purple").unwrap().clone(),
-			transform: Transform::from_xyz(0.0, 0.0, LAYER_PLAYER),
+			transform: Transform::from_xyz(0.0, 0.0, Layer::PLAYER),
 			..default()
 		})
 		.insert(Collidable::circle(96.0))
@@ -261,7 +262,7 @@ fn spawn_shot(
 		.insert(Name::new("Shot"))
 		.insert_bundle(SpriteSheetBundle {
 			texture_atlas: textures.get("shot_purple").unwrap().clone(),
-			transform: Transform::from_xyz(pos.x, pos.y, LAYER_SHOT),
+			transform: Transform::from_xyz(pos.x, pos.y, Layer::SHOT),
 			..default()
 		})
 		.insert(Collidable::circle(26.0))
@@ -308,7 +309,7 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 		.insert(Name::new("Wall - Left"))
 		.insert_bundle(SpriteSheetBundle {
 			texture_atlas: textures.get("wall_out_left").unwrap().clone(),
-			transform: Transform::from_xyz(-1184.0, 0.0, LAYER_BG),
+			transform: Transform::from_xyz(-1184.0, 0.0, Layer::BG),
 			..default()
 		})
 		.insert(Collidable::aa_rect(192.0, 3840.0))
@@ -319,7 +320,7 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 		.insert(Name::new("Wall - Right"))
 		.insert_bundle(SpriteSheetBundle {
 			texture_atlas: textures.get("wall_out_right").unwrap().clone(),
-			transform: Transform::from_xyz(1184.0, 0.0, LAYER_BG),
+			transform: Transform::from_xyz(1184.0, 0.0, Layer::BG),
 			..default()
 		})
 		.insert(Collidable::aa_rect(192.0, 3840.0))
@@ -332,7 +333,7 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 			texture_atlas: textures.get("wall_out_top").unwrap().clone(),
 			transform: Transform
 				::from_rotation(Quat::from_rotation_z(QUARTER_TURN))
-				.with_translation(Vec3::new(0.0, 1824.0, LAYER_BG)),
+				.with_translation(Vec3::new(0.0, 1824.0, Layer::BG)),
 			..default()
 		})
 		.insert(Collidable::aa_rect(2560.0, 192.0))
@@ -345,7 +346,7 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 			texture_atlas: textures.get("wall_out_bottom").unwrap().clone(),
 			transform: Transform
 				::from_rotation(Quat::from_rotation_z(QUARTER_TURN))
-				.with_translation(Vec3::new(0.0, -1824.0, LAYER_BG)),
+				.with_translation(Vec3::new(0.0, -1824.0, Layer::BG)),
 			..default()
 		})
 		.insert(Collidable::aa_rect(2560.0, 192.0))
@@ -358,7 +359,7 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 			texture_atlas: textures.get("wall_in_horizontal").unwrap().clone(),
 			transform: Transform
 				::from_rotation(Quat::from_rotation_z(QUARTER_TURN))
-				.with_translation(Vec3::new(-196.0, -1149.5, LAYER_BG)),
+				.with_translation(Vec3::new(-196.0, -1149.5, Layer::BG)),
 			..default()
 		})
 		.insert(Collidable::aa_rect(1066.0, 299.0))
@@ -369,7 +370,7 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 		.insert(Name::new("Wall - Verticle"))
 		.insert_bundle(SpriteSheetBundle {
 			texture_atlas: textures.get("wall_in_verticle").unwrap().clone(),
-			transform: Transform::from_xyz(702.0, 288.5, LAYER_BG),
+			transform: Transform::from_xyz(702.0, 288.5, Layer::BG),
 			..default()
 		})
 		.insert(Collidable::aa_rect(296.0, 2465.0))

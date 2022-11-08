@@ -17,5 +17,6 @@ lto = "fat"
 [dependencies]
 bevy = { version = "0.8.x" }
 bevy-inspector-egui = { version = "0.13.x" }
+bevy_prototype_lyon = { version = "0.6.x" }
 iyes_loopless = { version = "0.8", features = [ "fixedtimestep" ] }
 parry2d = { version = "0.11.x", features = [ "enhanced-determinism" ] }
