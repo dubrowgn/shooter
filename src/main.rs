@@ -1,38 +1,45 @@
+mod collide;
+mod movement;
+
 use bevy::{
 	input::Input,
 	prelude::*,
 	utils::{Duration, HashMap},
 };
-use bevy_inspector_egui::{WorldInspectorPlugin};
-use bevy_inspector_egui_rapier::InspectableRapierPlugin;
-use bevy_rapier2d::prelude::*;
+use bevy_inspector_egui::WorldInspectorPlugin;
+use collide::{Collidable, EntityHandle, QueryCompositeShape};
+use iyes_loopless::prelude::*;
+use movement::{Position, sys_write_back, Velocity};
+use parry2d::{
+	na,
+	partitioning::Qbvh,
+	query::{DefaultQueryDispatcher, details::TOICompositeShapeShapeBestFirstVisitor, TOI},
+};
 
 const HALF_TURN: f32 = std::f32::consts::PI;
 const QUARTER_TURN: f32 = HALF_TURN / 2.0;
 
 const LAYER_BG: f32 = 1.0;
 const LAYER_PLAYER: f32 = 2.0;
+const LAYER_SHOT: f32 = 3.0;
 
 fn main() {
 	App::new()
 		// types
 		.register_type::<Player>()
+		.register_type::<Position>()
+		.register_type::<Shot>()
+		.register_type::<Velocity>()
 		// resources
 		.insert_resource(ClearColor(Color::rgb(0.2, 0.2, 0.2)))
 		.insert_resource(WindowDescriptor {
-			title: "shooter".to_string(),
+			title: "shooter".into(),
 			..default()
 		})
 		.insert_resource(Textures::new())
-		.insert_resource(RapierConfiguration {
-			gravity: Vec2::ZERO,
-			..default()
-		})
+		.insert_resource(Walls::new())
 		// plugins
 		.add_plugins(DefaultPlugins)
-		.add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
-		.add_plugin(RapierDebugRenderPlugin::default())
-		.add_plugin(InspectableRapierPlugin)
 		.add_plugin(WorldInspectorPlugin::new())
 		// startup systems
 		.add_startup_system(load_assets)
@@ -40,6 +47,18 @@ fn main() {
 		.add_startup_system(spawn_player.after(load_assets))
 		.add_startup_system(spawn_walls.after(load_assets))
 		.add_startup_system(sys_spawn_shots.after(load_assets))
+		.add_startup_system_to_stage(StartupStage::PostStartup, sys_index_walls)
+		// game systems
+		.add_fixed_timestep(Duration::from_nanos(1_000_000_000/60), "game")
+		.add_fixed_timestep_system(
+			"game", 0, sys_move_shots,
+		)
+		.add_fixed_timestep_system(
+			"game", 0, sys_move_player.after(sys_move_shots),
+		)
+		.add_fixed_timestep_system(
+			"game", 0, sys_write_back.after(sys_move_player),
+		)
 		// systems
 		.add_system(handle_input)
 		.add_system(sys_spawn_shot
@@ -52,6 +71,7 @@ fn main() {
 }
 
 type Textures = HashMap<String, Handle<TextureAtlas>>;
+type Walls = Qbvh<EntityHandle>;
 
 fn spawn_camera(mut cmds: Commands) {
 	let scale = 1.5;
@@ -74,6 +94,120 @@ fn update_camera(
 	let c = &mut q_camera.single_mut().translation;
 	c.x = p.x;
 	c.y = p.y;
+}
+
+fn sys_index_walls(
+	mut walls: ResMut<Walls>,
+	q_walls: Query<(Entity, &Collidable, &Position), With<Wall>>
+) {
+	let shapes = q_walls.iter()
+		.map(|(ent, ref col, ref pos)| (EntityHandle::from(ent), col.shape.compute_aabb(&pos.to_iso())));
+	walls.clear_and_rebuild(shapes, 0.0);
+}
+
+fn refect(v: Vec2, norm: Vec2) -> Vec2 {
+	v - 2.0 * v.dot(norm) * norm
+}
+
+fn slide(v: Vec2, norm: Vec2) -> Vec2 {
+	v - v.dot(norm) * norm
+}
+
+fn sys_move_shots(
+	mut cmds: Commands,
+	timesteps: Res<FixedTimesteps>,
+	walls: Res<Walls>,
+	mut q_shots: Query<(Entity, &Collidable, &mut Position, &mut Velocity, &mut Shot)>,
+	q_walls: Query<(Entity, &Collidable, &Position), (With<Wall>, Without<Shot>)>,
+) {
+	let step_secs = timesteps.get_current().unwrap().step.as_secs_f32();
+
+	let dispatcher = DefaultQueryDispatcher{};
+	for (ent, col, mut pos, mut vel, mut shot) in &mut q_shots {
+		let mut dt = step_secs;
+		while dt > 0.0 {
+			let shapes = QueryCompositeShape {
+				query: &q_walls,
+				bvh: &walls,
+			};
+			let iso = pos.to_iso();
+			let v2 = vel.to_vector2();
+			let mut visitor = TOICompositeShapeShapeBestFirstVisitor::new(
+				&dispatcher,
+				&iso,
+				&v2,
+				&shapes,
+				col.shape.as_ref(),
+				dt,
+				false,
+			);
+			if let Some(res) = walls.traverse_best_first(&mut visitor).map(|h| h.1) {
+				let toi: TOI = res.1;
+				//info!("toi: {:?}", toi);
+
+				if shot.bounces == 0 {
+					cmds.entity(ent)
+						.despawn();
+					break;
+				} else {
+					shot.bounces -= 1;
+					dt -= toi.toi;
+
+					pos.p += vel.v * toi.toi;
+					vel.v = refect(vel.v, Vec2::new(toi.normal1.x, toi.normal1.y));
+				}
+			} else {
+				pos.p += vel.v * dt;
+				break;
+			}
+		}
+	}
+}
+
+fn sys_move_player(
+	timesteps: Res<FixedTimesteps>,
+	walls: Res<Walls>,
+	mut q_player: Query<(&Collidable, &mut Position, &Velocity), With<Player>>,
+	q_walls: Query<(Entity, &Collidable, &Position), (With<Wall>, Without<Player>)>,
+) {
+	let step_secs = timesteps.get_current().unwrap().step.as_secs_f32();
+
+	let dispatcher = DefaultQueryDispatcher{};
+	for (col, mut pos, vel) in &mut q_player {
+		let mut dt = step_secs;
+		let mut v = vel.v;
+		while dt > 0.0 {
+			let shapes = QueryCompositeShape {
+				query: &q_walls,
+				bvh: &walls,
+			};
+			let iso = pos.to_iso();
+			let v2 = na::Vector2::new(v.x, v.y);
+			let mut visitor = TOICompositeShapeShapeBestFirstVisitor::new(
+				&dispatcher,
+				&iso,
+				&v2,
+				&shapes,
+				col.shape.as_ref(),
+				dt,
+				false,
+			);
+			if let Some(res) = walls.traverse_best_first(&mut visitor).map(|h| h.1) {
+				let toi: TOI = res.1;
+				//info!("toi: {:?}", toi);
+
+				dt -= toi.toi;
+
+				// FIXME -- handle penetrations
+				pos.p += v * toi.toi;
+				v = slide(v, Vec2::new(toi.normal1.x, toi.normal1.y));
+				info!("slide v: {:?}", v);
+			} else {
+				pos.p += v * dt;
+				break;
+			}
+		}
+	}
 }
 
 #[derive(Component, Default, Reflect)]
@@ -103,17 +237,16 @@ fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
 			transform: Transform::from_xyz(0.0, 0.0, LAYER_PLAYER),
 			..default()
 		})
-		.insert(RigidBody::Dynamic)
-		.insert(Collider::ball(96.0))
-		.insert(Velocity::linear(Vec2::ZERO))
-		.insert(Friction {
-			coefficient: 0.0,
-			combine_rule: CoefficientCombineRule::Min,
-		});
+		.insert(Collidable::circle(96.0))
+		.insert(Position::ZERO)
+		.insert(Velocity::ZERO);
 }
 
 #[derive(Component, Default, Reflect)]
-struct Shot;
+#[reflect(Component)]
+struct Shot {
+	bounces: u8,
+}
 
 fn spawn_shot(
 	cmds: &mut Commands,
@@ -124,21 +257,16 @@ fn spawn_shot(
 	let speed: f32 = 2700.0;
 
 	cmds.spawn()
-		.insert(Shot)
+		.insert(Shot{ bounces: 3 })
 		.insert(Name::new("Shot"))
 		.insert_bundle(SpriteSheetBundle {
 			texture_atlas: textures.get("shot_purple").unwrap().clone(),
-			transform: Transform::from_xyz(pos.x, pos.y, LAYER_PLAYER),
+			transform: Transform::from_xyz(pos.x, pos.y, LAYER_SHOT),
 			..default()
 		})
-		.insert(RigidBody::Dynamic)
-		.insert(Collider::ball(26.0))
-		.insert(Velocity::linear(dir * speed))
-		.insert(Restitution::coefficient(1.0))
-		.insert(Friction {
-			coefficient: 0.0,
-			combine_rule: CoefficientCombineRule::Min,
-		});
+		.insert(Collidable::circle(26.0))
+		.insert(Position::from(pos))
+		.insert(Velocity::from(dir * speed));
 }
 
 fn sys_spawn_shot(
@@ -162,8 +290,12 @@ fn sys_spawn_shots(
 	mut cmds: Commands,
 	textures: Res<Textures>,
 ) {
-	for i in -512..=512 {
-		spawn_shot(&mut cmds, &textures, Vec2::Y * i as f32, Vec2::X);
+	let half_range = 0;
+	for i in -half_range..half_range {
+		let f = 0.001 * i as f32;
+		let pos = Vec2::new(f, f);
+		let dir = Vec2::from_angle(f);
+		spawn_shot(&mut cmds, &textures, pos, dir);
 	}
 }
 
@@ -179,8 +311,8 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 			transform: Transform::from_xyz(-1184.0, 0.0, LAYER_BG),
 			..default()
 		})
-		.insert(RigidBody::Fixed)
-		.insert(Collider::cuboid(96.0, 1920.0));
+		.insert(Collidable::aa_rect(192.0, 3840.0))
+		.insert(Position::new(-1184.0, 0.0));
 
 	cmds.spawn()
 		.insert(Wall)
@@ -190,8 +322,8 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 			transform: Transform::from_xyz(1184.0, 0.0, LAYER_BG),
 			..default()
 		})
-		.insert(RigidBody::Fixed)
-		.insert(Collider::cuboid(96.0, 1920.0));
+		.insert(Collidable::aa_rect(192.0, 3840.0))
+		.insert(Position::new(1184.0, 0.0));
 
 	cmds.spawn()
 		.insert(Wall)
@@ -203,8 +335,8 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 				.with_translation(Vec3::new(0.0, 1824.0, LAYER_BG)),
 			..default()
 		})
-		.insert(RigidBody::Fixed)
-		.insert(Collider::cuboid(96.0, 1280.0));
+		.insert(Collidable::aa_rect(2560.0, 192.0))
+		.insert(Position::new(0.0, 1824.0));
 
 	cmds.spawn()
 		.insert(Wall)
@@ -216,8 +348,8 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 				.with_translation(Vec3::new(0.0, -1824.0, LAYER_BG)),
 			..default()
 		})
-		.insert(RigidBody::Fixed)
-		.insert(Collider::cuboid(96.0, 1280.0));
+		.insert(Collidable::aa_rect(2560.0, 192.0))
+		.insert(Position::new(0.0, -1824.0));
 
 	cmds.spawn()
 		.insert(Wall)
@@ -229,8 +361,8 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 				.with_translation(Vec3::new(-196.0, -1149.5, LAYER_BG)),
 			..default()
 		})
-		.insert(RigidBody::Fixed)
-		.insert(Collider::cuboid(149.5, 533.0));
+		.insert(Collidable::aa_rect(1066.0, 299.0))
+		.insert(Position::new(-196.0, -1149.5));
 
 	cmds.spawn()
 		.insert(Wall)
@@ -240,8 +372,8 @@ fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
 			transform: Transform::from_xyz(702.0, 288.5, LAYER_BG),
 			..default()
 		})
-		.insert(RigidBody::Fixed)
-		.insert(Collider::cuboid(148.0, 1232.5));
+		.insert(Collidable::aa_rect(296.0, 2465.0))
+		.insert(Position::new(702.0, 288.5));
 }
 
 fn load_assets(
@@ -344,8 +476,7 @@ fn handle_input(
 	if keys.pressed(KeyCode::D) {
 		d.x += 1.0;
 	}
-	player_v.linvel = 900.0 * d;
-	player_v.angvel = 0.0;
+	player_v.v = 900.0f32 * d.normalize_or_zero();
 
 	// rotation
 

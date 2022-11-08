@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [profile.dev]
+#split-debuginfo = "packed"
 opt-level = 1
 
 [profile.dev.package."*"]
@@ -16,5 +17,5 @@ lto = "fat"
 [dependencies]
 bevy = { version = "0.8.x" }
 bevy-inspector-egui = { version = "0.13.x" }
-bevy-inspector-egui-rapier = { version = "0.6.x", features = ["rapier2d"] }
-bevy_rapier2d = { version = "0.17.x", features = ["debug-render", "enhanced-determinism"] }
+iyes_loopless = { version = "0.8", features = [ "fixedtimestep" ] }
+parry2d = { version = "0.11.x", features = [ "enhanced-determinism" ] }
