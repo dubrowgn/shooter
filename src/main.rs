@@ -202,7 +202,10 @@ fn sys_move_player(
 	for (col, mut pos, vel) in &mut q_player {
 		let mut dt = step_secs;
 		let mut v = vel.v;
-		while dt > 0.0 {
+		let mut limit = 8;
+		while dt > 0.0 && limit > 0 {
+			limit -= 1;
+
 			let shapes = QueryCompositeShape {
 				query: &q_walls,
 				bvh: &walls,
@@ -220,14 +223,14 @@ fn sys_move_player(
 			);
 			if let Some(res) = walls.traverse_best_first(&mut visitor).map(|h| h.1) {
 				let toi: TOI = res.1;
-				//info!("toi: {:?}", toi);
+				info!("toi: {:?}", toi);
 
 				dt -= toi.toi;
 
 				// FIXME -- handle penetrations
 				pos.p += v * toi.toi;
 				v = slide(v, Vec2::new(toi.normal1.x, toi.normal1.y));
-				info!("slide v: {:?}", v);
+				info!("slide v: {:?}; dt: {:?}", v, dt);
 			} else {
 				pos.p += v * dt;
 				break;
