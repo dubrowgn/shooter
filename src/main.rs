@@ -24,7 +24,13 @@ use movement::{Position, sys_write_back, Velocity};
 use parry2d::{
 	na,
 	partitioning::Qbvh,
-	query::{DefaultQueryDispatcher, details::TOICompositeShapeShapeBestFirstVisitor, TOI},
+	query::{
+		DefaultQueryDispatcher,
+		details::TOICompositeShapeShapeBestFirstVisitor,
+		QueryDispatcher,
+		TOI,
+		TOIStatus,
+	},
 };
 
 const HALF_TURN: f32 = std::f32::consts::PI;
@@ -169,8 +175,6 @@ fn sys_move_shots(
 			);
 			if let Some(res) = walls.traverse_best_first(&mut visitor).map(|h| h.1) {
 				let toi: TOI = res.1;
-				//info!("toi: {:?}", toi);
-
 				if shot.bounces == 0 {
 					cmds.entity(ent)
 						.despawn_recursive();
@@ -190,6 +194,46 @@ fn sys_move_shots(
 	}
 }
 
+#[derive(Debug)]
+pub struct Contact {
+	pub pos: Vec2,
+	pub norm: Vec2,
+	pub dist: f32,
+}
+
+impl Contact {
+	pub fn mtv(&self) -> Vec2 {
+		self.norm * (self.dist)
+	}
+}
+
+/// Results are from the perspective of `col1`
+fn contact(
+	col1: &Collidable, pos1: &Position, col2: &Collidable, pos2: &Position
+) -> Option<Contact> {
+	let res = DefaultQueryDispatcher{}.contact(
+		&(pos2 - pos1).to_iso(),
+		col1.shape.as_ref(),
+		col2.shape.as_ref(),
+		f32::MAX,
+	);
+
+	let contact = match res {
+		Ok(Some(c)) => c,
+		Ok(None) => return None,
+		Err(e) => {
+			warn!("{}", e);
+			return None;
+		},
+	};
+
+	Some(Contact {
+		pos: Vec2::new(contact.point1.x, contact.point1.y) + pos1.p,
+		norm: Vec2::new(contact.normal2.x, contact.normal2.y),
+		dist: -contact.dist,
+	})
+}
+
 fn sys_move_player(
 	timesteps: Res<FixedTimesteps>,
 	walls: Res<Walls>,
@@ -200,6 +244,10 @@ fn sys_move_player(
 
 	let dispatcher = DefaultQueryDispatcher{};
 	for (col, mut pos, vel) in &mut q_player {
+		if vel.v == Vec2::ZERO {
+			continue;
+		}
+
 		let mut dt = step_secs;
 		let mut v = vel.v;
 		let mut limit = 8;
@@ -223,14 +271,20 @@ fn sys_move_player(
 			);
 			if let Some(res) = walls.traverse_best_first(&mut visitor).map(|h| h.1) {
 				let toi: TOI = res.1;
-				info!("toi: {:?}", toi);
+				if toi.status == TOIStatus::Penetrating {
+					let ent = res.0;
+					let (_, wall_col, wall_pos) = q_walls.get(ent.0).unwrap();
 
-				dt -= toi.toi;
+					let contact = contact(col, &pos, wall_col, wall_pos).unwrap();
+					let margin = 8192.0 * f32::EPSILON;
+					pos.p += contact.norm * (contact.dist + margin);
+					v = slide(v, contact.norm);
+				} else {
+					dt -= toi.toi;
 
-				// FIXME -- handle penetrations
-				pos.p += v * toi.toi;
-				v = slide(v, Vec2::new(toi.normal1.x, toi.normal1.y));
-				info!("slide v: {:?}; dt: {:?}", v, dt);
+					pos.p += v * toi.toi;
+					v = slide(v, Vec2::new(toi.normal1.x, toi.normal1.y));
+				}
 			} else {
 				pos.p += v * dt;
 				break;

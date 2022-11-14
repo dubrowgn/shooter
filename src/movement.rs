@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use parry2d::na;
+use std::ops::{Add, Sub};
 
 #[derive(Component, Default, Reflect)]
 #[reflect(Component)]
@@ -22,6 +23,38 @@ impl Position {
 impl From<Vec2> for Position {
 	fn from(p: Vec2) -> Self {
 		Position{ p }
+	}
+}
+
+impl Add for Position {
+	type Output = Self;
+
+	fn add(self, other: Self) -> Self {
+		Self { p: self.p + other.p }
+	}
+}
+
+impl<'a, 'b> Add<&'b Position> for &'a Position {
+	type Output = Position;
+
+	fn add(self, other: &'b Position) -> Position {
+		Position { p: self.p + other.p }
+	}
+}
+
+impl Sub for Position {
+	type Output = Self;
+
+	fn sub(self, other: Self) -> Self {
+		Self { p: self.p - other.p }
+	}
+}
+
+impl<'a, 'b> Sub<&'b Position> for &'a Position {
+	type Output = Position;
+
+	fn sub(self, other: &'b Position) -> Position {
+		Position { p: self.p - other.p }
 	}
 }
 
