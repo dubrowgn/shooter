@@ -1,8 +1,12 @@
+mod args;
 mod collide;
 mod debug;
 mod layer;
+#[macro_use]
+mod macros;
 mod movement;
 
+use args::parse_args;
 use bevy::{
 	input::Input,
 	prelude::*,
@@ -37,6 +41,12 @@ const HALF_TURN: f32 = std::f32::consts::PI;
 const QUARTER_TURN: f32 = HALF_TURN / 2.0;
 
 fn main() {
+	let config = unwrap!(parse_args(), {
+		return;
+	});
+
+	println!("{:?}", config);
+
 	App::new()
 		// types
 		.register_type::<Player>()
@@ -276,7 +286,7 @@ fn sys_move_player(
 					let (_, wall_col, wall_pos) = q_walls.get(ent.0).unwrap();
 
 					let contact = contact(col, &pos, wall_col, wall_pos).unwrap();
-					let margin = 8192.0 * f32::EPSILON;
+					let margin:f32 = 8192.0 * f32::EPSILON;
 					pos.p += contact.norm * (contact.dist + margin);
 					v = slide(v, contact.norm);
 				} else {
