@@ -13,6 +13,10 @@ use crate::movement::Position;
 use parry2d::{
 	math::{Real, Isometry},
 	partitioning::{Qbvh, IndexedData},
+	query::{
+		DefaultQueryDispatcher,
+		QueryDispatcher,
+	},
 	shape::{SharedShape, Shape, TypedShape, TypedSimdCompositeShape},
 	utils::DefaultStorage,
 };
@@ -146,4 +150,44 @@ pub fn sys_collide_debug_toggle(
 	for mut vis in &mut q_collide {
 		vis.is_visible = debug.enabled;
 	}
+}
+
+#[derive(Debug)]
+pub struct Contact {
+	pub pos: Vec2,
+	pub norm: Vec2,
+	pub dist: f32,
+}
+
+impl Contact {
+	pub fn mtv(&self) -> Vec2 {
+		self.norm * (self.dist)
+	}
+}
+
+/// Results are from the perspective of `col1`
+pub fn contact(
+	col1: &Collidable, pos1: &Position, col2: &Collidable, pos2: &Position
+) -> Option<Contact> {
+	let res = DefaultQueryDispatcher{}.contact(
+		&(pos2 - pos1).to_iso(),
+		col1.shape.as_ref(),
+		col2.shape.as_ref(),
+		f32::MAX,
+	);
+
+	let contact = match res {
+		Ok(Some(c)) => c,
+		Ok(None) => return None,
+		Err(e) => {
+			warn!("{}", e);
+			return None;
+		},
+	};
+
+	Some(Contact {
+		pos: Vec2::new(contact.point1.x, contact.point1.y) + pos1.p,
+		norm: Vec2::new(contact.normal2.x, contact.normal2.y),
+		dist: -contact.dist,
+	})
 }
