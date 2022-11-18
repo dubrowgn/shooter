@@ -391,10 +391,10 @@ fn spawn_statics(mut cmds: Commands, textures: Res<Textures>) {
 				.insert(Position::new(x, y));
 		};
 
-		mk_wall("Wall - Left", "wall_out_left", -1184.0, 0.0, 192.0, 3840.0, 0.0);
-		mk_wall("Wall - Right", "wall_out_right", 1184.0, 0.0, 192.0, 3840.0, 0.0);
-		mk_wall("Wall - Top", "wall_out_top", 0.0, 1824.0, 2560.0, 192.0, QUARTER_TURN);
-		mk_wall("Wall - Bottom", "wall_out_bottom", 0.0, -1824.0, 2560.0, 192.0, QUARTER_TURN);
+		mk_wall("Wall - Left", "wall_out_left", -1184.0, 0.0, 96.0, 3840.0, 0.0);
+		mk_wall("Wall - Right", "wall_out_right", 1184.0, 0.0, 96.0, 3840.0, 0.0);
+		mk_wall("Wall - Top", "wall_out_top", 0.0, 1824.0, 2560.0, 96.0, QUARTER_TURN);
+		mk_wall("Wall - Bottom", "wall_out_bottom", 0.0, -1824.0, 2560.0, 96.0, QUARTER_TURN);
 		mk_wall("Wall - Horizontal", "wall_in_horizontal", -196.0, -1149.5, 1066.0, 299.0, QUARTER_TURN);
 		mk_wall("Wall - Verticle", "wall_in_verticle", 702.0, 288.5, 296.0, 2465.0, 0.0);
 	}
