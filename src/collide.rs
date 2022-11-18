@@ -7,7 +7,7 @@ use bevy_prototype_lyon::{
 	prelude::{GeometryBuilder, DrawMode, StrokeMode},
 	entity::ShapeBundle,
 };
-use crate::debug::Debug;
+use crate::{debug::Debug, movement::Velocity};
 use crate::layer::Layer;
 use crate::movement::Position;
 use parry2d::{
@@ -15,7 +15,7 @@ use parry2d::{
 	partitioning::{Qbvh, IndexedData},
 	query::{
 		DefaultQueryDispatcher,
-		QueryDispatcher,
+		QueryDispatcher, details::TOICompositeShapeShapeBestFirstVisitor, TOIStatus,
 	},
 	shape::{SharedShape, Shape, TypedShape, TypedSimdCompositeShape},
 	utils::DefaultStorage,
@@ -190,4 +190,60 @@ pub fn contact(
 		norm: Vec2::new(contact.normal2.x, contact.normal2.y),
 		dist: -contact.dist,
 	})
+}
+
+#[derive(Debug)]
+pub struct Toi {
+	pub norm: Vec2,
+	pub toi_sec: f32,
+}
+
+#[derive(Debug)]
+pub enum ToiResult {
+	Contact(Contact),
+	Miss,
+	Toi(Toi),
+}
+
+pub fn toi<'w, 's, Q: WorldQuery, F: WorldQuery>(
+	query_geometry: &Query<'w, 's, Q, F>,
+	query_bvh: &Qbvh<EntityHandle>,
+	col: &Collidable,
+	pos: &Position,
+	vel: &Velocity,
+	max_toi_sec: f32
+) -> ToiResult {
+	let dispatcher = DefaultQueryDispatcher{};
+	let shapes = QueryCompositeShape {
+		query: &query_geometry,
+		bvh: &query_bvh,
+	};
+	let pos_iso = pos.to_iso();
+	let vel_v2 = vel.to_vector2();
+
+	let mut visitor = TOICompositeShapeShapeBestFirstVisitor::new(
+		&dispatcher,
+		&pos_iso,
+		&vel_v2,
+		&shapes,
+		col.shape.as_ref(),
+		max_toi_sec,
+		true,
+	);
+
+	let (ent, toi) = unwrap!(query_bvh.traverse_best_first(&mut visitor).map(|h| h.1), {
+		return ToiResult::Miss;
+	});
+
+	if toi.status == TOIStatus::Converged && toi.toi > 0.0 {
+		return ToiResult::Toi(Toi {
+			norm: Vec2::new(toi.normal1.x, toi.normal1.y),
+			toi_sec: toi.toi,
+		});
+	}
+
+	let geo_col = query_geometry.get_component::<Collidable>(ent.0).unwrap();
+	let geo_pos = query_geometry.get_component::<Position>(ent.0).unwrap();
+
+	return ToiResult::Contact(contact(col, &pos, geo_col, geo_pos).unwrap());
 }

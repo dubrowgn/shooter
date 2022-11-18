@@ -1,10 +1,12 @@
+#[macro_use]
+mod macros;
+
 mod args;
 mod collide;
 mod debug;
 mod layer;
-#[macro_use]
-mod macros;
 mod movement;
+mod time;
 
 use args::parse_args;
 use bevy::{
@@ -16,26 +18,18 @@ use bevy_inspector_egui::{WorldInspectorPlugin, WorldInspectorParams};
 use bevy_prototype_lyon::plugin::ShapePlugin;
 use collide::{
 	Collidable,
-	contact,
 	EntityHandle,
-	QueryCompositeShape,
 	sys_collide_debug_add,
 	sys_collide_debug_toggle,
+	toi,
+	ToiResult,
 };
 use debug::Debug;
 use iyes_loopless::prelude::*;
 use layer::Layer;
 use movement::{Position, sys_write_back, Velocity};
-use parry2d::{
-	na,
-	partitioning::Qbvh,
-	query::{
-		DefaultQueryDispatcher,
-		details::TOICompositeShapeShapeBestFirstVisitor,
-		TOI,
-		TOIStatus,
-	},
-};
+use parry2d::partitioning::Qbvh;
+use time::Accumulator;
 
 const HALF_TURN: f32 = std::f32::consts::PI;
 const QUARTER_TURN: f32 = HALF_TURN / 2.0;
@@ -49,6 +43,7 @@ fn main() {
 
 	App::new()
 		// types
+		.register_type::<Accumulator>()
 		.register_type::<Player>()
 		.register_type::<Position>()
 		.register_type::<Shot>()
@@ -66,7 +61,7 @@ fn main() {
 			..default()
 		})
 		.insert_resource(Textures::new())
-		.insert_resource(Walls::new())
+		.insert_resource(Statics::new())
 		// plugins
 		.add_plugins(DefaultPlugins)
 		.add_plugin(ShapePlugin)
@@ -75,30 +70,31 @@ fn main() {
 		.add_startup_system(load_assets)
 		.add_startup_system(spawn_camera)
 		.add_startup_system(spawn_player.after(load_assets))
-		.add_startup_system(spawn_walls.after(load_assets))
+		.add_startup_system(spawn_statics.after(load_assets))
 		.add_startup_system(sys_spawn_shots.after(load_assets))
-		.add_startup_system_to_stage(StartupStage::PostStartup, sys_index_walls)
-		// game systems
-		.add_fixed_timestep(Duration::from_nanos(1_000_000_000/60), "game")
+		.add_startup_system_to_stage(StartupStage::PostStartup, sys_index_statics)
+		// pre-fixed systems (once per frame)
+		.add_stage_before(CoreStage::Update, "pre-fixed", SystemStage::parallel())
+		.add_system_to_stage("pre-fixed", handle_input)
+		// fixed systems (0+ times per frame)
+		.add_fixed_timestep(Duration::from_nanos(1_000_000_000 / 60), "fixed")
 		.add_fixed_timestep_system(
-			"game", 0, sys_move_shots,
+			"fixed", 0, sys_spawn_shot
 		)
 		.add_fixed_timestep_system(
-			"game", 0, sys_move_player.after(sys_move_shots),
+			"fixed", 0, sys_move_shots.after(sys_spawn_shot),
 		)
 		.add_fixed_timestep_system(
-			"game", 0, sys_write_back.after(sys_move_player),
+			"fixed", 0, sys_move_player.after(sys_move_shots),
 		)
+		// post-fixed (once per frame)
+		.add_stage_before(CoreStage::Update, "post-fixed", SystemStage::parallel())
+		.add_system_to_stage("post-fixed", sys_write_back)
+		.add_system_to_stage("post-fixed", update_camera)
 		// systems
-		.add_system(handle_input)
 		.add_system(sys_collide_debug_add)
 		.add_system(sys_collide_debug_toggle)
 		.add_system(sys_inspector_toggle)
-		.add_system(sys_spawn_shot
-			.after(handle_input)
-			.before(update_camera)
-		)
-		.add_system(update_camera)
 		// run
 		.run();
 }
@@ -113,7 +109,7 @@ pub fn sys_inspector_toggle(
 }
 
 type Textures = HashMap<String, Handle<TextureAtlas>>;
-type Walls = Qbvh<EntityHandle>;
+type Statics = Qbvh<EntityHandle>;
 
 fn spawn_camera(mut cmds: Commands) {
 	let scale = 1.5;
@@ -130,24 +126,24 @@ fn spawn_camera(mut cmds: Commands) {
 
 fn update_camera(
 	mut q_camera: Query<&mut Transform, With<Camera>>,
-	q_player: Query<&Transform, (With<Player>, Without<Camera>)>
+	q_player: Query<&Position, (With<Player>, Without<Camera>)>
 ) {
-	let p = q_player.single().translation;
+	let pos = q_player.single();
 	let c = &mut q_camera.single_mut().translation;
-	c.x = p.x;
-	c.y = p.y;
+	c.x = pos.p.x;
+	c.y = pos.p.y;
 }
 
-fn sys_index_walls(
-	mut walls: ResMut<Walls>,
-	q_walls: Query<(Entity, &Collidable, &Position), With<Wall>>
+fn sys_index_statics(
+	mut statics: ResMut<Statics>,
+	q_walls: Query<(Entity, &Collidable, &Position), With<Static>>
 ) {
 	let shapes = q_walls.iter()
 		.map(|(ent, ref col, ref pos)| (EntityHandle::from(ent), col.shape.compute_aabb(&pos.to_iso())));
-	walls.clear_and_rebuild(shapes, 0.0);
+	statics.clear_and_rebuild(shapes, 0.0);
 }
 
-fn refect(v: Vec2, norm: Vec2) -> Vec2 {
+fn reflect(v: Vec2, norm: Vec2) -> Vec2 {
 	v - 2.0 * v.dot(norm) * norm
 }
 
@@ -158,47 +154,49 @@ fn slide(v: Vec2, norm: Vec2) -> Vec2 {
 fn sys_move_shots(
 	mut cmds: Commands,
 	timesteps: Res<FixedTimesteps>,
-	walls: Res<Walls>,
+	statics: Res<Statics>,
 	mut q_shots: Query<(Entity, &Collidable, &mut Position, &mut Velocity, &mut Shot)>,
-	q_walls: Query<(Entity, &Collidable, &Position), (With<Wall>, Without<Shot>)>,
+	q_statics: Query<(Entity, &Collidable, &Position), (With<Static>, Without<Shot>)>,
 ) {
 	let step_secs = timesteps.get_current().unwrap().step.as_secs_f32();
 
-	let dispatcher = DefaultQueryDispatcher{};
 	for (ent, col, mut pos, mut vel, mut shot) in &mut q_shots {
-		let mut dt = step_secs;
-		while dt > 0.0 {
-			let shapes = QueryCompositeShape {
-				query: &q_walls,
-				bvh: &walls,
-			};
-			let iso = pos.to_iso();
-			let v2 = vel.to_vector2();
-			let mut visitor = TOICompositeShapeShapeBestFirstVisitor::new(
-				&dispatcher,
-				&iso,
-				&v2,
-				&shapes,
-				col.shape.as_ref(),
-				dt,
-				false,
-			);
-			if let Some(res) = walls.traverse_best_first(&mut visitor).map(|h| h.1) {
-				let toi: TOI = res.1;
-				if shot.bounces == 0 {
-					cmds.entity(ent)
-						.despawn_recursive();
-					break;
-				} else {
-					shot.bounces -= 1;
-					dt -= toi.toi;
 
-					pos.p += vel.v * toi.toi;
-					vel.v = refect(vel.v, Vec2::new(toi.normal1.x, toi.normal1.y));
-				}
-			} else {
-				pos.p += vel.v * dt;
-				break;
+		//info!("    ----");
+
+		let mut max_toi = step_secs;
+		let mut limit = 8;
+		while max_toi > 0.0 && limit > 0 {
+			limit -= 1;
+
+			//info!("pos: {:?}; v: {:?}; max_toi: {}", pos.p, vel.v, max_toi);
+
+			let margin:f32 = 1024.0 * f32::EPSILON;
+			match toi(&q_statics, &statics, col, &pos, &vel, max_toi) {
+				ToiResult::Miss => {
+					pos.p += vel.v * max_toi;
+					break;
+				},
+				ToiResult::Contact(contact) => {
+					//info!("contact: {:?}", contact);
+
+					pos.p += contact.norm * (contact.dist + margin);
+				},
+				ToiResult::Toi(toi) => {
+					//info!("toi: {:?}", toi);
+
+					if shot.bounces == 0 {
+						cmds.entity(ent)
+							.despawn_recursive();
+						break;
+					}
+
+					shot.bounces -= 1;
+
+					max_toi -= toi.toi_sec;
+					pos.p += vel.v * toi.toi_sec + toi.norm * margin;
+					vel.v = reflect(vel.v, toi.norm);
+				},
 			}
 		}
 	}
@@ -206,58 +204,46 @@ fn sys_move_shots(
 
 fn sys_move_player(
 	timesteps: Res<FixedTimesteps>,
-	walls: Res<Walls>,
+	statics: Res<Statics>,
 	mut q_player: Query<(&Collidable, &mut Position, &Velocity), With<Player>>,
-	q_walls: Query<(Entity, &Collidable, &Position), (With<Wall>, Without<Player>)>,
+	q_statics: Query<(Entity, &Collidable, &Position), (With<Static>, Without<Player>)>,
 ) {
 	let step_secs = timesteps.get_current().unwrap().step.as_secs_f32();
 
-	let dispatcher = DefaultQueryDispatcher{};
 	for (col, mut pos, vel) in &mut q_player {
 		if vel.v == Vec2::ZERO {
 			continue;
 		}
 
-		let mut dt = step_secs;
-		let mut v = vel.v;
+		//info!("    ----");
+
+		let mut max_toi = step_secs;
+		let mut v = vel.clone();
 		let mut limit = 8;
-		while dt > 0.0 && limit > 0 {
+		while max_toi > 0.0 && limit > 0 {
 			limit -= 1;
 
-			let shapes = QueryCompositeShape {
-				query: &q_walls,
-				bvh: &walls,
-			};
-			let iso = pos.to_iso();
-			let v2 = na::Vector2::new(v.x, v.y);
-			let mut visitor = TOICompositeShapeShapeBestFirstVisitor::new(
-				&dispatcher,
-				&iso,
-				&v2,
-				&shapes,
-				col.shape.as_ref(),
-				dt,
-				false,
-			);
-			if let Some(res) = walls.traverse_best_first(&mut visitor).map(|h| h.1) {
-				let toi: TOI = res.1;
-				if toi.status == TOIStatus::Penetrating {
-					let ent = res.0;
-					let (_, wall_col, wall_pos) = q_walls.get(ent.0).unwrap();
+			//info!("pos: {:?}; v: {:?}; max_toi: {}", pos.p, v.v, max_toi);
 
-					let contact = contact(col, &pos, wall_col, wall_pos).unwrap();
-					let margin:f32 = 8192.0 * f32::EPSILON;
+			let margin:f32 = 8192.0 * f32::EPSILON;
+			match toi(&q_statics, &statics, col, &pos, &v, max_toi) {
+				ToiResult::Miss => {
+					pos.p += v.v * max_toi;
+					break;
+				},
+				ToiResult::Contact(contact) => {
+					//info!("contact: {:?}", contact);
+
 					pos.p += contact.norm * (contact.dist + margin);
-					v = slide(v, contact.norm);
-				} else {
-					dt -= toi.toi;
+					v.v = slide(v.v, contact.norm);
+				},
+				ToiResult::Toi(toi) => {
+					//info!("toi: {:?}", toi);
 
-					pos.p += v * toi.toi;
-					v = slide(v, Vec2::new(toi.normal1.x, toi.normal1.y));
-				}
-			} else {
-				pos.p += v * dt;
-				break;
+					max_toi -= toi.toi_sec;
+					pos.p += v.v * toi.toi_sec + toi.norm * margin;
+					v.v = slide(v.v, toi.norm);
+				},
 			}
 		}
 	}
@@ -266,24 +252,12 @@ fn sys_move_player(
 #[derive(Component, Default, Reflect)]
 #[reflect(Component)]
 struct Player {
-	shot_timer: Timer,
-}
-
-impl Player {
-	fn new() -> Self {
-		let mut p = Player {
-			shot_timer: Timer::new(Duration::from_millis(100), true),
-		};
-
-		p.shot_timer.pause();
-
-		return p;
-	}
+	shot_acc: Option<Accumulator>,
 }
 
 fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
 	cmds.spawn()
-		.insert(Player::new())
+		.insert(Player::default())
 		.insert(Name::new("Player"))
 		.insert_bundle(SpriteSheetBundle {
 			texture_atlas: textures.get("player_purple").unwrap().clone(),
@@ -324,18 +298,20 @@ fn spawn_shot(
 
 fn sys_spawn_shot(
 	mut cmds: Commands,
+	timesteps: Res<FixedTimesteps>,
 	textures: Res<Textures>,
-	time: Res<Time>,
 	mut q_player: Query<(&Transform, &mut Player)>
 ) {
+	let step_ns = timesteps.get_current().unwrap().step.as_nanos();
+
 	let (player_t, mut player) = q_player.single_mut();
 	let dir = player_t.right().truncate();
 	let pos = player_t.translation.truncate() + dir * (96.0 + 26.0);
 
-	player.shot_timer.tick(time.delta());
-	let shots = player.shot_timer.times_finished_this_tick();
-	for _ in 0..shots {
-		spawn_shot(&mut cmds, &textures, pos, dir);
+	if let Some(acc) = &mut player.shot_acc {
+		for _ in acc.advance(step_ns as u64) {
+			spawn_shot(&mut cmds, &textures, pos, dir);
+		}
 	}
 }
 
@@ -353,80 +329,54 @@ fn sys_spawn_shots(
 }
 
 #[derive(Component, Default, Reflect)]
-struct Wall;
+struct Static;
 
-fn spawn_walls(mut cmds: Commands, textures: Res<Textures>) {
-	cmds.spawn()
-		.insert(Wall)
-		.insert(Name::new("Wall - Left"))
-		.insert_bundle(SpriteSheetBundle {
-			texture_atlas: textures.get("wall_out_left").unwrap().clone(),
-			transform: Transform::from_xyz(-1184.0, 0.0, Layer::BG),
-			..default()
-		})
-		.insert(Collidable::aa_rect(192.0, 3840.0))
-		.insert(Position::new(-1184.0, 0.0));
+fn spawn_statics(mut cmds: Commands, textures: Res<Textures>) {
+	{
+		let mut mk_wall = |name, texture, x, y, w, h, r| {
+			cmds.spawn()
+				.insert(Static)
+				.insert(Name::new(name))
+				.insert_bundle(SpriteSheetBundle {
+					texture_atlas: textures.get(texture).unwrap().clone(),
+					transform: Transform
+						::from_rotation(Quat::from_rotation_z(r))
+						.with_translation(Vec3::new(x, y, Layer::BG)),
+					..default()
+				})
+				.insert(Collidable::aa_rect(w, h))
+				.insert(Position::new(x, y));
+		};
 
-	cmds.spawn()
-		.insert(Wall)
-		.insert(Name::new("Wall - Right"))
-		.insert_bundle(SpriteSheetBundle {
-			texture_atlas: textures.get("wall_out_right").unwrap().clone(),
-			transform: Transform::from_xyz(1184.0, 0.0, Layer::BG),
-			..default()
-		})
-		.insert(Collidable::aa_rect(192.0, 3840.0))
-		.insert(Position::new(1184.0, 0.0));
+		mk_wall("Wall - Left", "wall_out_left", -1184.0, 0.0, 192.0, 3840.0, 0.0);
+		mk_wall("Wall - Right", "wall_out_right", 1184.0, 0.0, 192.0, 3840.0, 0.0);
+		mk_wall("Wall - Top", "wall_out_top", 0.0, 1824.0, 2560.0, 192.0, QUARTER_TURN);
+		mk_wall("Wall - Bottom", "wall_out_bottom", 0.0, -1824.0, 2560.0, 192.0, QUARTER_TURN);
+		mk_wall("Wall - Horizontal", "wall_in_horizontal", -196.0, -1149.5, 1066.0, 299.0, QUARTER_TURN);
+		mk_wall("Wall - Verticle", "wall_in_verticle", 702.0, 288.5, 296.0, 2465.0, 0.0);
+	}
 
-	cmds.spawn()
-		.insert(Wall)
-		.insert(Name::new("Wall - Top"))
-		.insert_bundle(SpriteSheetBundle {
-			texture_atlas: textures.get("wall_out_top").unwrap().clone(),
-			transform: Transform
-				::from_rotation(Quat::from_rotation_z(QUARTER_TURN))
-				.with_translation(Vec3::new(0.0, 1824.0, Layer::BG)),
-			..default()
-		})
-		.insert(Collidable::aa_rect(2560.0, 192.0))
-		.insert(Position::new(0.0, 1824.0));
+	{
+		let mut mk_bush = |name, x, y| {
+			cmds.spawn()
+			.insert(Static)
+			.insert(Name::new(name))
+			.insert_bundle(SpriteSheetBundle {
+				texture_atlas: textures.get("bush").unwrap().clone(),
+				transform: Transform::from_xyz(x, y, Layer::BG),
+				..default()
+			})
+			.insert(Collidable::circle(128.0))
+			.insert(Position::new(x, y));
+		};
 
-	cmds.spawn()
-		.insert(Wall)
-		.insert(Name::new("Wall - Bottom"))
-		.insert_bundle(SpriteSheetBundle {
-			texture_atlas: textures.get("wall_out_bottom").unwrap().clone(),
-			transform: Transform
-				::from_rotation(Quat::from_rotation_z(QUARTER_TURN))
-				.with_translation(Vec3::new(0.0, -1824.0, Layer::BG)),
-			..default()
-		})
-		.insert(Collidable::aa_rect(2560.0, 192.0))
-		.insert(Position::new(0.0, -1824.0));
-
-	cmds.spawn()
-		.insert(Wall)
-		.insert(Name::new("Wall - Horizontal"))
-		.insert_bundle(SpriteSheetBundle {
-			texture_atlas: textures.get("wall_in_horizontal").unwrap().clone(),
-			transform: Transform
-				::from_rotation(Quat::from_rotation_z(QUARTER_TURN))
-				.with_translation(Vec3::new(-196.0, -1149.5, Layer::BG)),
-			..default()
-		})
-		.insert(Collidable::aa_rect(1066.0, 299.0))
-		.insert(Position::new(-196.0, -1149.5));
-
-	cmds.spawn()
-		.insert(Wall)
-		.insert(Name::new("Wall - Verticle"))
-		.insert_bundle(SpriteSheetBundle {
-			texture_atlas: textures.get("wall_in_verticle").unwrap().clone(),
-			transform: Transform::from_xyz(702.0, 288.5, Layer::BG),
-			..default()
-		})
-		.insert(Collidable::aa_rect(296.0, 2465.0))
-		.insert(Position::new(702.0, 288.5));
+		mk_bush("Bush 1", -128.0, 1228.0);
+		mk_bush("Bush 2", 128.0, 1100.0);
+		mk_bush("Bush 3", -512.0, 64.0);
+		mk_bush("Bush 4", 192.0, -512.0);
+		mk_bush("Bush 5", 64.0, -640.0);
+		mk_bush("Bush 6", 760.0, -1400.0);
+	}
 }
 
 fn load_assets(
@@ -485,6 +435,19 @@ fn load_assets(
 		textures.insert("wall_in_verticle".into(), atlases.add(rect(386.0, 0.0, 296.0, 2465.0)));
 		textures.insert("wall_in_horizontal".into(), atlases.add(rect(386.0, 2465.0, 299.0, 1066.0)));
 	}
+
+	{
+		let img: Handle<Image> = assets.load("image/bush.png");
+		let rect = |l, t, w, h| TextureAtlas::from_grid_with_padding(
+			img.clone(),
+			Vec2::new(w, h),
+			1,
+			1,
+			Vec2::ZERO,
+			Vec2::new(l, t),
+		);
+		textures.insert("bush".into(), atlases.add(rect(0.0, 0.0, 256.0, 256.0)));
+	}
 }
 
 fn handle_input(
@@ -511,12 +474,9 @@ fn handle_input(
 
 	// shooting?
 	if btns.just_pressed(MouseButton::Left) {
-		let dur = player.shot_timer.duration();
-		player.shot_timer.reset();
-		player.shot_timer.unpause();
-		player.shot_timer.set_elapsed(dur);
+		player.shot_acc = Some(Accumulator::ready_from_millis(100));
 	} else if btns.just_released(MouseButton::Left) {
-		player.shot_timer.pause();
+		player.shot_acc = None;
 	}
 
 	// velocity

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use parry2d::na;
 use std::ops::{Add, Sub};
 
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Clone, Default, Reflect)]
 #[reflect(Component)]
 pub struct Position {
 	pub p: Vec2,
@@ -58,7 +58,7 @@ impl<'a, 'b> Sub<&'b Position> for &'a Position {
 	}
 }
 
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Clone, Default, Reflect)]
 #[reflect(Component)]
 pub struct Velocity {
 	pub v: Vec2,
