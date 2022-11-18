@@ -427,43 +427,36 @@ fn load_assets(
 	assets: Res<AssetServer>,
 	mut atlases: ResMut<Assets<TextureAtlas>>
 ) {
+	let slice = |img: &Handle<Image>, size, row: u16|
+		TextureAtlas::from_grid_with_padding(
+			img.clone(),
+			Vec2::splat(size),
+			3,
+			1,
+			Vec2::ZERO,
+			Vec2::new(0.0, row as f32 * size),
+		);
+
 	{
-		let img: Handle<Image> = assets.load("image/players.png");
+		let img = assets.load("image/players.png");
 		let size = 256.0;
-		let slice = |row: u16| TextureAtlas::from_grid_with_padding(
-			img.clone(),
-			Vec2::splat(size),
-			3,
-			1,
-			Vec2::ZERO,
-			Vec2::new(0.0, row as f32 * size),
-		);
-		textures.insert("player_blue".into(), atlases.add(slice(0)));
-		textures.insert("player_red".into(), atlases.add(slice(1)));
-		textures.insert("player_green".into(), atlases.add(slice(2)));
-		textures.insert("player_purple".into(), atlases.add(slice(3)));
+		textures.insert("player_blue".into(), atlases.add(slice(&img, size, 0)));
+		textures.insert("player_red".into(), atlases.add(slice(&img, size, 1)));
+		textures.insert("player_green".into(), atlases.add(slice(&img, size, 2)));
+		textures.insert("player_purple".into(), atlases.add(slice(&img, size, 3)));
 	}
 
 	{
-		let img: Handle<Image> = assets.load("image/shots.png");
+		let img = assets.load("image/shots.png");
 		let size = 96.0;
-		let slice = |row: u16| TextureAtlas::from_grid_with_padding(
-			img.clone(),
-			Vec2::splat(size),
-			3,
-			1,
-			Vec2::ZERO,
-			Vec2::new(0.0, row as f32 * size),
-		);
-		textures.insert("shot_blue".into(), atlases.add(slice(0)));
-		textures.insert("shot_red".into(), atlases.add(slice(1)));
-		textures.insert("shot_green".into(), atlases.add(slice(2)));
-		textures.insert("shot_purple".into(), atlases.add(slice(3)));
+		textures.insert("shot_blue".into(), atlases.add(slice(&img, size, 0)));
+		textures.insert("shot_red".into(), atlases.add(slice(&img, size, 1)));
+		textures.insert("shot_green".into(), atlases.add(slice(&img, size, 2)));
+		textures.insert("shot_purple".into(), atlases.add(slice(&img, size, 3)));
 	}
 
-	{
-		let img: Handle<Image> = assets.load("image/walls.png");
-		let rect = |l, t, w, h| TextureAtlas::from_grid_with_padding(
+	let rect = |img: &Handle<Image>, l, t, w, h|
+		TextureAtlas::from_grid_with_padding(
 			img.clone(),
 			Vec2::new(w, h),
 			1,
@@ -471,51 +464,30 @@ fn load_assets(
 			Vec2::ZERO,
 			Vec2::new(l, t),
 		);
-		textures.insert("wall_out_left".into(), atlases.add(rect(0.0, 0.0, 192.0, 3840.0)));
-		textures.insert("wall_out_right".into(), atlases.add(rect(194.0, 0.0, 192.0, 3840.0)));
-		textures.insert("wall_out_top".into(), atlases.add(rect(686.0, 0.0, 192.0, 2176.0)));
-		textures.insert("wall_out_bottom".into(), atlases.add(rect(880.0, 0.0, 192.0, 2176.0)));
-		textures.insert("wall_in_verticle".into(), atlases.add(rect(386.0, 0.0, 296.0, 2465.0)));
-		textures.insert("wall_in_horizontal".into(), atlases.add(rect(386.0, 2465.0, 299.0, 1066.0)));
+
+	{
+		let img = assets.load("image/walls.png");
+		textures.insert("wall_out_left".into(), atlases.add(rect(&img, 0.0, 0.0, 192.0, 3840.0)));
+		textures.insert("wall_out_right".into(), atlases.add(rect(&img, 194.0, 0.0, 192.0, 3840.0)));
+		textures.insert("wall_out_top".into(), atlases.add(rect(&img, 686.0, 0.0, 192.0, 2176.0)));
+		textures.insert("wall_out_bottom".into(), atlases.add(rect(&img, 880.0, 0.0, 192.0, 2176.0)));
+		textures.insert("wall_in_verticle".into(), atlases.add(rect(&img, 386.0, 0.0, 296.0, 2465.0)));
+		textures.insert("wall_in_horizontal".into(), atlases.add(rect(&img, 386.0, 2465.0, 299.0, 1066.0)));
 	}
 
 	{
-		let img: Handle<Image> = assets.load("image/bush.png");
-		let rect = |l, t, w, h| TextureAtlas::from_grid_with_padding(
-			img.clone(),
-			Vec2::new(w, h),
-			1,
-			1,
-			Vec2::ZERO,
-			Vec2::new(l, t),
-		);
-		textures.insert("bush".into(), atlases.add(rect(0.0, 0.0, 256.0, 256.0)));
+		let img = assets.load("image/bush.png");
+		textures.insert("bush".into(), atlases.add(rect(&img, 0.0, 0.0, 256.0, 256.0)));
 	}
 
 	{
-		let img: Handle<Image> = assets.load("image/grass.png");
-		let rect = |l, t, w, h| TextureAtlas::from_grid_with_padding(
-			img.clone(),
-			Vec2::new(w, h),
-			1,
-			1,
-			Vec2::ZERO,
-			Vec2::new(l, t),
-		);
-		textures.insert("grass".into(), atlases.add(rect(1.0, 1.0, 320.0, 320.0)));
+		let img = assets.load("image/grass.png");
+		textures.insert("grass".into(), atlases.add(rect(&img, 1.0, 1.0, 320.0, 320.0)));
 	}
 
 	{
-		let img: Handle<Image> = assets.load("image/dirt_splat.png");
-		let rect = |l, t, w, h| TextureAtlas::from_grid_with_padding(
-			img.clone(),
-			Vec2::new(w, h),
-			1,
-			1,
-			Vec2::ZERO,
-			Vec2::new(l, t),
-		);
-		textures.insert("dirt".into(), atlases.add(rect(0.0, 0.0, 640.0, 640.0)));
+		let img = assets.load("image/dirt_splat.png");
+		textures.insert("dirt".into(), atlases.add(rect(&img, 0.0, 0.0, 640.0, 640.0)));
 	}
 }
 
