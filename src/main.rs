@@ -355,6 +355,20 @@ fn spawn_bg(mut cmds: Commands, textures: Res<Textures>) {
 			mk_grass(left + xi as f32 * size, bottom + yi as f32 * size);
 		}
 	}
+
+	let mut mk_dirt = |x, y| {
+		cmds.spawn()
+			.insert(Bg)
+			.insert(Name::new("Dirt"))
+			.insert_bundle(SpriteSheetBundle {
+				texture_atlas: textures.get("dirt").unwrap().clone(),
+				transform: Transform::from_xyz(x, y, Layer::BG_FX),
+				..default()
+			})
+			.insert(Position::new(x, y));
+	};
+
+	mk_dirt(-260.0, 240.0);
 }
 
 #[derive(Component, Default, Reflect)]
@@ -489,6 +503,19 @@ fn load_assets(
 			Vec2::new(l, t),
 		);
 		textures.insert("grass".into(), atlases.add(rect(1.0, 1.0, 320.0, 320.0)));
+	}
+
+	{
+		let img: Handle<Image> = assets.load("image/dirt_splat.png");
+		let rect = |l, t, w, h| TextureAtlas::from_grid_with_padding(
+			img.clone(),
+			Vec2::new(w, h),
+			1,
+			1,
+			Vec2::ZERO,
+			Vec2::new(l, t),
+		);
+		textures.insert("dirt".into(), atlases.add(rect(0.0, 0.0, 640.0, 640.0)));
 	}
 }
 
