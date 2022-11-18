@@ -70,6 +70,7 @@ fn main() {
 		.add_startup_system(load_assets)
 		.add_startup_system(spawn_camera)
 		.add_startup_system(spawn_player.after(load_assets))
+		.add_startup_system(spawn_bg.after(load_assets))
 		.add_startup_system(spawn_statics.after(load_assets))
 		.add_startup_system(sys_spawn_shots.after(load_assets))
 		.add_startup_system_to_stage(StartupStage::PostStartup, sys_index_statics)
@@ -328,6 +329,34 @@ fn sys_spawn_shots(
 	}
 }
 
+#[derive(Component)]
+struct Bg;
+
+fn spawn_bg(mut cmds: Commands, textures: Res<Textures>) {
+	let mut mk_grass = |x, y| {
+		cmds.spawn()
+			.insert(Bg)
+			.insert(Name::new(format!("Grass ({}, {})", x, y)))
+			.insert_bundle(SpriteSheetBundle {
+				texture_atlas: textures.get("grass").unwrap().clone(),
+				transform: Transform::from_xyz(x, y, Layer::BG),
+				..default()
+			})
+			.insert(Position::new(x, y));
+	};
+
+	let xn = 8;
+	let yn = 12;
+	let size: f32 = 320.0;
+	let left: f32 = -size / 2.0 - (xn / 2 - 1) as f32 * size;
+	let bottom: f32 = -size / 2.0 - (yn / 2 - 1) as f32 * size;
+	for xi in 0..xn {
+		for yi in 0..yn {
+			mk_grass(left + xi as f32 * size, bottom + yi as f32 * size);
+		}
+	}
+}
+
 #[derive(Component, Default, Reflect)]
 struct Static;
 
@@ -341,7 +370,7 @@ fn spawn_statics(mut cmds: Commands, textures: Res<Textures>) {
 					texture_atlas: textures.get(texture).unwrap().clone(),
 					transform: Transform
 						::from_rotation(Quat::from_rotation_z(r))
-						.with_translation(Vec3::new(x, y, Layer::BG)),
+						.with_translation(Vec3::new(x, y, Layer::STATIC)),
 					..default()
 				})
 				.insert(Collidable::aa_rect(w, h))
@@ -357,25 +386,25 @@ fn spawn_statics(mut cmds: Commands, textures: Res<Textures>) {
 	}
 
 	{
-		let mut mk_bush = |name, x, y| {
+		let mut mk_bush = |x, y| {
 			cmds.spawn()
 			.insert(Static)
-			.insert(Name::new(name))
+			.insert(Name::new(format!("Bush ({}, {})", x, y)))
 			.insert_bundle(SpriteSheetBundle {
 				texture_atlas: textures.get("bush").unwrap().clone(),
-				transform: Transform::from_xyz(x, y, Layer::BG),
+				transform: Transform::from_xyz(x, y, Layer::STATIC),
 				..default()
 			})
 			.insert(Collidable::circle(128.0))
 			.insert(Position::new(x, y));
 		};
 
-		mk_bush("Bush 1", -128.0, 1228.0);
-		mk_bush("Bush 2", 128.0, 1100.0);
-		mk_bush("Bush 3", -512.0, 64.0);
-		mk_bush("Bush 4", 192.0, -512.0);
-		mk_bush("Bush 5", 64.0, -640.0);
-		mk_bush("Bush 6", 760.0, -1400.0);
+		mk_bush(-128.0, 1228.0);
+		mk_bush(128.0, 1100.0);
+		mk_bush(-512.0, 64.0);
+		mk_bush(192.0, -512.0);
+		mk_bush(64.0, -640.0);
+		mk_bush(760.0, -1400.0);
 	}
 }
 
@@ -447,6 +476,19 @@ fn load_assets(
 			Vec2::new(l, t),
 		);
 		textures.insert("bush".into(), atlases.add(rect(0.0, 0.0, 256.0, 256.0)));
+	}
+
+	{
+		let img: Handle<Image> = assets.load("image/grass.png");
+		let rect = |l, t, w, h| TextureAtlas::from_grid_with_padding(
+			img.clone(),
+			Vec2::new(w, h),
+			1,
+			1,
+			Vec2::ZERO,
+			Vec2::new(l, t),
+		);
+		textures.insert("grass".into(), atlases.add(rect(1.0, 1.0, 320.0, 320.0)));
 	}
 }
 

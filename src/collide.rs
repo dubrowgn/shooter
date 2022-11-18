@@ -112,7 +112,7 @@ fn shape_to_bundle(shape: &dyn Shape, t: &Transform) -> ShapeBundle {
 		}),
 		_ => panic!("Unimplemented shape type {:?}", shape.shape_type()),
 	}.build(
-		DrawMode::Stroke(StrokeMode::color(Color::rgba(0.8, 0.8, 0.0, 0.35))),
+		DrawMode::Stroke(StrokeMode::color(Color::rgb(0.8, 0.8, 0.0))),
 		Transform::from_xyz(0.0, 0.0, Layer::FG)
 			.with_rotation(-t.rotation),
 	)
