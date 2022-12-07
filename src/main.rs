@@ -56,15 +56,17 @@ fn main() {
 			params.enabled = false;
 			params
 		})
-		.insert_resource(WindowDescriptor {
-			title: "shooter".into(),
-			..default()
-		})
-		.insert_resource(Sounds::new())
-		.insert_resource(Textures::new())
-		.insert_resource(Statics::new())
+		.insert_resource(Sounds(HashMap::new()))
+		.insert_resource(Textures(HashMap::new()))
+		.insert_resource(Statics(Qbvh::new()))
 		// plugins
-		.add_plugins(DefaultPlugins)
+		.add_plugins(DefaultPlugins.set(WindowPlugin {
+			window: WindowDescriptor {
+				title: "shooter".into(),
+				..default()
+			},
+			..default()
+		}))
 		.add_plugin(ShapePlugin)
 		.add_plugin(WorldInspectorPlugin::new())
 		// startup systems
@@ -110,21 +112,24 @@ pub fn sys_inspector_toggle(
 	}
 }
 
-type Sounds = HashMap<String, Handle<AudioSource>>;
-type Textures = HashMap<String, Handle<TextureAtlas>>;
-type Statics = Qbvh<EntityHandle>;
+#[derive(Resource)]
+struct Sounds(HashMap<String, Handle<AudioSource>>);
+
+#[derive(Resource)]
+struct Textures(HashMap<String, Handle<TextureAtlas>>);
+
+#[derive(Resource)]
+struct Statics(Qbvh<EntityHandle>);
 
 fn spawn_camera(mut cmds: Commands) {
 	let scale = 1.5;
 	let far  = 1000.0;
 
-	let cam = Camera2dBundle {
+	cmds.spawn(Camera2dBundle {
 		transform: Transform::from_xyz(0.0, 0.0, far)
 			.with_scale(Vec3::new(scale, scale, 1.0)),
 		..default()
-	};
-
-	cmds.spawn_bundle(cam);
+	});
 }
 
 fn update_camera(
@@ -141,6 +146,7 @@ fn sys_index_statics(
 	mut statics: ResMut<Statics>,
 	q_walls: Query<(Entity, &Collidable, &Position), With<Static>>
 ) {
+	let statics = &mut statics.0;
 	let shapes = q_walls.iter()
 		.map(|(ent, ref col, ref pos)| (EntityHandle::from(ent), col.shape.compute_aabb(&pos.to_iso())));
 	statics.clear_and_rebuild(shapes, 0.0);
@@ -161,6 +167,7 @@ fn sys_move_shots(
 	mut q_shots: Query<(Entity, &Collidable, &mut Position, &mut Velocity, &mut Shot)>,
 	q_statics: Query<(Entity, &Collidable, &Position), (With<Static>, Without<Shot>)>,
 ) {
+	let statics = &statics.0;
 	let step_secs = timesteps.get_current().unwrap().step.as_secs_f32();
 
 	for (ent, col, mut pos, mut vel, mut shot) in &mut q_shots {
@@ -211,6 +218,7 @@ fn sys_move_player(
 	mut q_player: Query<(&Collidable, &mut Position, &Velocity), With<Player>>,
 	q_statics: Query<(Entity, &Collidable, &Position), (With<Static>, Without<Player>)>,
 ) {
+	let statics = &statics.0;
 	let step_secs = timesteps.get_current().unwrap().step.as_secs_f32();
 
 	for (col, mut pos, vel) in &mut q_player {
@@ -259,17 +267,20 @@ struct Player {
 }
 
 fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
-	cmds.spawn()
-		.insert(Player::default())
-		.insert(Name::new("Player"))
-		.insert_bundle(SpriteSheetBundle {
+	let textures = &textures.0;
+
+	cmds.spawn((
+		Player::default(),
+		Name::new("Player"),
+		SpriteSheetBundle {
 			texture_atlas: textures.get("player_purple").unwrap().clone(),
 			transform: Transform::from_xyz(0.0, 0.0, Layer::PLAYER),
 			..default()
-		})
-		.insert(Collidable::circle(96.0))
-		.insert(Position::ZERO)
-		.insert(Velocity::ZERO);
+		},
+		Collidable::circle(96.0),
+		Position::ZERO,
+		Velocity::ZERO,
+	));
 }
 
 #[derive(Component, Default, Reflect)]
@@ -284,19 +295,21 @@ fn spawn_shot(
 	pos: Vec2,
 	dir: Vec2,
 ) {
+	let textures = &textures.0;
 	let speed: f32 = 2700.0;
 
-	cmds.spawn()
-		.insert(Shot{ bounces: 3 })
-		.insert(Name::new("Shot"))
-		.insert_bundle(SpriteSheetBundle {
+	cmds.spawn((
+		Shot{ bounces: 3 },
+		Name::new("Shot"),
+		SpriteSheetBundle {
 			texture_atlas: textures.get("shot_purple").unwrap().clone(),
 			transform: Transform::from_xyz(pos.x, pos.y, Layer::SHOT),
 			..default()
-		})
-		.insert(Collidable::circle(26.0))
-		.insert(Position::from(pos))
-		.insert(Velocity::from(dir * speed));
+		},
+		Collidable::circle(26.0),
+		Position::from(pos),
+		Velocity::from(dir * speed),
+	));
 }
 
 fn sys_spawn_shot(
@@ -307,6 +320,7 @@ fn sys_spawn_shot(
 	textures: Res<Textures>,
 	mut q_player: Query<(&Transform, &mut Player)>
 ) {
+	let sounds = &sounds.0;
 	let step_ns = timesteps.get_current().unwrap().step.as_nanos();
 
 	let (player_t, mut player) = q_player.single_mut();
@@ -345,16 +359,19 @@ fn sys_spawn_shots(
 struct Bg;
 
 fn spawn_bg(mut cmds: Commands, textures: Res<Textures>) {
+	let textures = &textures.0;
+
 	let mut mk_grass = |x, y| {
-		cmds.spawn()
-			.insert(Bg)
-			.insert(Name::new(format!("Grass ({}, {})", x, y)))
-			.insert_bundle(SpriteSheetBundle {
+		cmds.spawn((
+			Bg,
+			Name::new(format!("Grass ({}, {})", x, y)),
+			SpriteSheetBundle {
 				texture_atlas: textures.get("grass").unwrap().clone(),
 				transform: Transform::from_xyz(x, y, Layer::BG),
 				..default()
-			})
-			.insert(Position::new(x, y));
+			},
+			Position::new(x, y),
+		));
 	};
 
 	let xn = 8;
@@ -369,15 +386,16 @@ fn spawn_bg(mut cmds: Commands, textures: Res<Textures>) {
 	}
 
 	let mut mk_dirt = |x, y| {
-		cmds.spawn()
-			.insert(Bg)
-			.insert(Name::new("Dirt"))
-			.insert_bundle(SpriteSheetBundle {
+		cmds.spawn((
+			Bg,
+			Name::new("Dirt"),
+			SpriteSheetBundle {
 				texture_atlas: textures.get("dirt").unwrap().clone(),
 				transform: Transform::from_xyz(x, y, Layer::BG_FX),
 				..default()
-			})
-			.insert(Position::new(x, y));
+			},
+			Position::new(x, y),
+		));
 	};
 
 	mk_dirt(-260.0, 240.0);
@@ -387,20 +405,23 @@ fn spawn_bg(mut cmds: Commands, textures: Res<Textures>) {
 struct Static;
 
 fn spawn_statics(mut cmds: Commands, textures: Res<Textures>) {
+	let textures = &textures.0;
+
 	{
 		let mut mk_wall = |name, texture, x, y, w, h, r| {
-			cmds.spawn()
-				.insert(Static)
-				.insert(Name::new(name))
-				.insert_bundle(SpriteSheetBundle {
+			cmds.spawn((
+				Static,
+				Name::new(name),
+				SpriteSheetBundle {
 					texture_atlas: textures.get(texture).unwrap().clone(),
 					transform: Transform
 						::from_rotation(Quat::from_rotation_z(r))
 						.with_translation(Vec3::new(x, y, Layer::STATIC)),
 					..default()
-				})
-				.insert(Collidable::aa_rect(w, h))
-				.insert(Position::new(x, y));
+				},
+				Collidable::aa_rect(w, h),
+				Position::new(x, y),
+			));
 		};
 
 		mk_wall("Wall - Left", "wall_out_left", -1184.0, 0.0, 96.0, 3840.0, 0.0);
@@ -413,16 +434,17 @@ fn spawn_statics(mut cmds: Commands, textures: Res<Textures>) {
 
 	{
 		let mut mk_bush = |x, y| {
-			cmds.spawn()
-			.insert(Static)
-			.insert(Name::new(format!("Bush ({}, {})", x, y)))
-			.insert_bundle(SpriteSheetBundle {
-				texture_atlas: textures.get("bush").unwrap().clone(),
-				transform: Transform::from_xyz(x, y, Layer::STATIC),
-				..default()
-			})
-			.insert(Collidable::circle(128.0))
-			.insert(Position::new(x, y));
+			cmds.spawn((
+				Static,
+				Name::new(format!("Bush ({}, {})", x, y)),
+				SpriteSheetBundle {
+					texture_atlas: textures.get("bush").unwrap().clone(),
+					transform: Transform::from_xyz(x, y, Layer::STATIC),
+					..default()
+				},
+				Collidable::circle(128.0),
+				Position::new(x, y),
+			));
 		};
 
 		mk_bush(-128.0, 1228.0);
@@ -440,14 +462,17 @@ fn load_assets(
 	assets: Res<AssetServer>,
 	mut atlases: ResMut<Assets<TextureAtlas>>
 ) {
+	let sounds = &mut sounds.0;
+	let textures = &mut textures.0;
+
 	let slice = |img: &Handle<Image>, size, row: u16|
-		TextureAtlas::from_grid_with_padding(
+		TextureAtlas::from_grid(
 			img.clone(),
 			Vec2::splat(size),
 			3,
 			1,
-			Vec2::ZERO,
-			Vec2::new(0.0, row as f32 * size),
+			Some(Vec2::ZERO),
+			Some(Vec2::new(0.0, row as f32 * size)),
 		);
 
 	{
@@ -469,13 +494,13 @@ fn load_assets(
 	}
 
 	let rect = |img: &Handle<Image>, l, t, w, h|
-		TextureAtlas::from_grid_with_padding(
+		TextureAtlas::from_grid(
 			img.clone(),
 			Vec2::new(w, h),
 			1,
 			1,
-			Vec2::ZERO,
-			Vec2::new(l, t),
+			Some(Vec2::ZERO),
+			Some(Vec2::new(l, t)),
 		);
 
 	{

@@ -1,5 +1,5 @@
 use bevy::{
-	ecs::query::WorldQuery,
+	ecs::query::{WorldQuery, ReadOnlyWorldQuery},
 	prelude::*,
 };
 use bevy_prototype_lyon::{
@@ -63,12 +63,12 @@ impl IndexedData for EntityHandle {
 	}
 }
 
-pub struct QueryCompositeShape<'a, 'w, 's, Q: WorldQuery, F: WorldQuery> {
+pub struct QueryCompositeShape<'a, 'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery> {
 	pub query: &'a Query<'w, 's, Q, F>,
 	pub bvh: &'a Qbvh<EntityHandle>,
 }
 
-impl<'a, 'w, 's, Q: WorldQuery, F: WorldQuery> TypedSimdCompositeShape for QueryCompositeShape<'a, 'w, 's, Q, F> {
+impl<'a, 'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery> TypedSimdCompositeShape for QueryCompositeShape<'a, 'w, 's, Q, F> {
 	type PartShape = dyn Shape;
 	type PartId = EntityHandle;
 	type QbvhStorage = DefaultStorage;
@@ -99,9 +99,9 @@ impl<'a, 'w, 's, Q: WorldQuery, F: WorldQuery> TypedSimdCompositeShape for Query
 	}
 }
 
-fn shape_to_bundle(shape: &dyn Shape, t: &Transform) -> ShapeBundle {
+fn shape_to_bundle(shape: &dyn Shape, t: &Transform, visible: bool) -> ShapeBundle {
 	let builder = GeometryBuilder::new();
-	match shape.as_typed_shape() {
+	let mut bundle = match shape.as_typed_shape() {
 		TypedShape::Ball(b) => builder.add(&Circle {
 			center: Vec2::ZERO,
 			radius:b.radius,
@@ -115,7 +115,11 @@ fn shape_to_bundle(shape: &dyn Shape, t: &Transform) -> ShapeBundle {
 		DrawMode::Stroke(StrokeMode::color(Color::rgb(0.8, 0.8, 0.0))),
 		Transform::from_xyz(0.0, 0.0, Layer::FG)
 			.with_rotation(-t.rotation),
-	)
+	);
+
+	bundle.visibility.is_visible = visible;
+
+	bundle
 }
 
 #[derive(Component, Default, Reflect)]
@@ -128,11 +132,11 @@ pub fn sys_collide_debug_add(
 	q_added: Query<(Entity, &Collidable, &Transform), Added<Collidable>>
 ) {
 	for (ent, col, t) in &q_added {
-		let id = cmds.spawn()
-			.insert(CollidableDebug)
-			.insert(Name::new("CollidableDebug"))
-			.insert_bundle(shape_to_bundle(col.shape.as_ref(), t))
-			.insert(Visibility { is_visible: debug.enabled })
+		let id = cmds.spawn((
+				CollidableDebug,
+				Name::new("CollidableDebug"),
+				shape_to_bundle(col.shape.as_ref(), t, debug.enabled),
+			))
 			.id();
 		cmds.entity(ent)
 			.add_child(id);
@@ -205,7 +209,7 @@ pub enum ToiResult {
 	Toi(Toi),
 }
 
-pub fn toi<'w, 's, Q: WorldQuery, F: WorldQuery>(
+pub fn toi<'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery>(
 	query_geometry: &Query<'w, 's, Q, F>,
 	query_bvh: &Qbvh<EntityHandle>,
 	col: &Collidable,
