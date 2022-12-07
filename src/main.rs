@@ -60,6 +60,7 @@ fn main() {
 			title: "shooter".into(),
 			..default()
 		})
+		.insert_resource(Sounds::new())
 		.insert_resource(Textures::new())
 		.insert_resource(Statics::new())
 		// plugins
@@ -109,6 +110,7 @@ pub fn sys_inspector_toggle(
 	}
 }
 
+type Sounds = HashMap<String, Handle<AudioSource>>;
 type Textures = HashMap<String, Handle<TextureAtlas>>;
 type Statics = Qbvh<EntityHandle>;
 
@@ -299,7 +301,9 @@ fn spawn_shot(
 
 fn sys_spawn_shot(
 	mut cmds: Commands,
+	audio: Res<Audio>,
 	timesteps: Res<FixedTimesteps>,
+	sounds: Res<Sounds>,
 	textures: Res<Textures>,
 	mut q_player: Query<(&Transform, &mut Player)>
 ) {
@@ -312,6 +316,14 @@ fn sys_spawn_shot(
 	if let Some(acc) = &mut player.shot_acc {
 		for _ in acc.advance(step_ns as u64) {
 			spawn_shot(&mut cmds, &textures, pos, dir);
+			audio.play_with_settings(
+				sounds.get("laser/1").unwrap().clone(),
+				PlaybackSettings {
+					repeat: false,
+					speed: 1.0,
+					volume: 1.0,
+				},
+			);
 		}
 	}
 }
@@ -423,6 +435,7 @@ fn spawn_statics(mut cmds: Commands, textures: Res<Textures>) {
 }
 
 fn load_assets(
+	mut sounds: ResMut<Sounds>,
 	mut textures: ResMut<Textures>,
 	assets: Res<AssetServer>,
 	mut atlases: ResMut<Assets<TextureAtlas>>
@@ -489,6 +502,12 @@ fn load_assets(
 		let img = assets.load("image/dirt_splat.png");
 		textures.insert("dirt".into(), atlases.add(rect(&img, 0.0, 0.0, 640.0, 640.0)));
 	}
+
+	sounds.insert("laser/1".into(), assets.load("audio/laser/1.ogg"));
+	sounds.insert("laser/2".into(), assets.load("audio/laser/2.ogg"));
+	sounds.insert("laser/3".into(), assets.load("audio/laser/3.ogg"));
+	sounds.insert("laser/4".into(), assets.load("audio/laser/4.ogg"));
+	sounds.insert("laser/5".into(), assets.load("audio/laser/5.ogg"));
 }
 
 fn handle_input(
