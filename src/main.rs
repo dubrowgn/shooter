@@ -5,6 +5,7 @@ mod args;
 mod collide;
 mod debug;
 mod layer;
+mod metric;
 mod movement;
 mod time;
 
@@ -27,6 +28,7 @@ use collide::{
 use debug::Debug;
 use iyes_loopless::prelude::*;
 use layer::Layer;
+use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
 use parry2d::partitioning::Qbvh;
 use time::Accumulator;
@@ -99,6 +101,7 @@ fn main() {
 		.add_system(sys_collide_debug_add)
 		.add_system(sys_collide_debug_toggle)
 		.add_system(sys_inspector_toggle)
+		.add_system(sys_fps)
 		// run
 		.run();
 }
@@ -533,6 +536,20 @@ fn load_assets(
 	sounds.insert("laser/3".into(), assets.load("audio/laser/3.ogg"));
 	sounds.insert("laser/4".into(), assets.load("audio/laser/4.ogg"));
 	sounds.insert("laser/5".into(), assets.load("audio/laser/5.ogg"));
+}
+
+fn sys_fps(mut metric: Local<Metric>, time: Res<Time>) {
+	metric.sample(time.delta_seconds());
+	if metric.total() >= 1.0 {
+		info!(
+			"frames:{}, fps:{:.2}, min:{:.2}ms, max:{:.2}ms",
+			metric.count(),
+			1.0 / metric.avg(),
+			metric.min() * 1000.0,
+			metric.max() * 1000.0,
+		);
+		metric.reset();
+	}
 }
 
 fn handle_input(
