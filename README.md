@@ -21,3 +21,5 @@ $ ./setup.sh
 ...
 $ cargo run
 ```
+
+![screenshot_2023-02-01](readme/screenshot_2023-02-01.jpg)
