@@ -1,6 +1,8 @@
 # shooter
 
-Video game tech demo using Rust and Bevy
+A video game tech demo using Rust and Bevy.
+
+*Please note*: This is primarily a learning and exporatory exercise, so expect subpar code quality and organization. The main goal is to prove the various technical requirements of making a specific game can be met with the given toolset. Other objectives are considered secondary at this time.
 
 ## Input
 
