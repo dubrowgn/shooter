@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [profile.dev]
-split-debuginfo = "unpacked"
 opt-level = 1
 
 [profile.dev.package."*"]
