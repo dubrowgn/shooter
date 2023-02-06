@@ -18,5 +18,7 @@ bevy = { version = "0.9.x" }
 bevy-inspector-egui = { version = "0.14.x" }
 bevy_prototype_lyon = { version = "0.7.x" }
 iyes_loopless = { version = "0.9.x", features = [ "fixedtimestep" ] }
+naia-bevy-client = { version = "0.15.x" }
+naia-bevy-server = { version = "0.15.x" }
 parry2d = { version = "0.13.x", features = [ "enhanced-determinism" ] }
 pico-args = { version = "0.5.x", features = [ "eq-separator", "combined-flags", "short-space-opt" ] }
