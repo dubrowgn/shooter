@@ -8,11 +8,11 @@ A video game tech demo using Rust and Bevy.
 
 ## Input
 
-`W` `A` `S` `D` - Move  
-Mouse - Aim
-Left Click - Shoot  
-`F11` - Toggle fullscreen  
-`F12` - Toggle debug overlay  
+* `W` `A` `S` `D` - Move
+* Mouse - Aim
+* Left Click - Shoot
+* `F11` - Toggle fullscreen
+* `F12` - Toggle debug overlay
 
 ## Basic Rust Development Environment Setup
 
