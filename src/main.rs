@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[macro_use]
 mod macros;
 
@@ -7,6 +9,7 @@ mod debug;
 mod layer;
 mod metric;
 mod movement;
+mod net;
 mod time;
 
 use args::parse_args;
@@ -30,8 +33,13 @@ use iyes_loopless::prelude::*;
 use layer::Layer;
 use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
+use naia_bevy_client::{ClientConfig, Plugin as ClientPlugin, Stage as ClientStage};
+use naia_bevy_server::{Plugin as ServerPlugin, ServerConfig, Stage as ServerStage};
+use net::{client, config, server};
 use parry2d::partitioning::Qbvh;
 use time::Accumulator;
+
+use crate::net::protocol::{Protocol, Channels};
 
 const HALF_TURN: f32 = std::f32::consts::PI;
 const QUARTER_TURN: f32 = HALF_TURN / 2.0;
@@ -43,7 +51,9 @@ fn main() {
 
 	println!("{:?}", config);
 
-	App::new()
+	let mut app = App::new();
+
+	app
 		// types
 		.register_type::<Accumulator>()
 		.register_type::<Player>()
@@ -101,9 +111,34 @@ fn main() {
 		.add_system(sys_collide_debug_add)
 		.add_system(sys_collide_debug_toggle)
 		.add_system(sys_inspector_toggle)
-		.add_system(sys_fps)
-		// run
-		.run();
+		.add_system(sys_fps);
+
+	if config.server == None {
+		app
+			.add_plugin(ServerPlugin::<Protocol, Channels>::new(
+				ServerConfig::default(),
+				config::global_avg(),
+			))
+			.add_startup_system(server::sys_start)
+			.add_system_to_stage(ServerStage::ReceiveEvents, server::sys_event_auth)
+			.add_system_to_stage(ServerStage::ReceiveEvents, server::sys_event_connect)
+			.add_system_to_stage(ServerStage::ReceiveEvents, server::sys_event_disconnect)
+			.add_system_to_stage(ServerStage::ReceiveEvents, server::sys_event_msg);
+	} else {
+		app
+			// Plugins
+			.add_plugin(ClientPlugin::<Protocol, Channels>::new(
+				ClientConfig::default(),
+				config::global_avg(),
+			))
+			.add_startup_system(client::sys_connect)
+			.add_system_to_stage(ClientStage::Connection, client::sys_event_connect)
+			.add_system_to_stage(ClientStage::Disconnection, client::sys_event_disconnect)
+			.add_system_to_stage(ClientStage::Rejection, client::sys_event_reject);
+	}
+
+	// run
+	app.run();
 }
 
 pub fn sys_inspector_toggle(
