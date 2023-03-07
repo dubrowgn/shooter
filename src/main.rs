@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[macro_use]
 mod macros;
 
@@ -7,6 +9,7 @@ mod debug;
 mod layer;
 mod metric;
 mod movement;
+mod tick_stage;
 mod time;
 
 use args::parse_args;
@@ -26,15 +29,22 @@ use collide::{
 	ToiResult,
 };
 use debug::Debug;
-use iyes_loopless::prelude::*;
 use layer::Layer;
 use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
 use parry2d::partitioning::Qbvh;
+use tick_stage::{TickInfo, TickStage};
 use time::Accumulator;
 
 const HALF_TURN: f32 = std::f32::consts::PI;
 const QUARTER_TURN: f32 = HALF_TURN / 2.0;
+
+#[derive(Debug, StageLabel)]
+enum CustomStage {
+	PreTicks,
+	Ticks,
+	PostTicks,
+}
 
 fn main() {
 	let config = unwrap!(parse_args(), {
@@ -43,7 +53,31 @@ fn main() {
 
 	println!("{:?}", config);
 
-	App::new()
+	let mut pre_ticks = SystemStage::parallel();
+	pre_ticks
+		.add_system(handle_input);
+
+	let tick_info = TickInfo {
+		acc: Duration::ZERO,
+		budget: Duration::from_millis(100),
+		step: Duration::from_nanos(1_000_000_000 / 60),
+	};
+	let mut ticks = TickStage::parallel();
+	ticks
+		.add_system(sys_tps)
+		.add_system(sys_spawn_shot)
+		.add_system(sys_move_shots.after(sys_spawn_shot))
+		.add_system(sys_move_player.after(sys_move_shots));
+
+	let mut post_ticks = SystemStage::parallel();
+	post_ticks
+		.add_system(sys_fps)
+		.add_system(sys_write_back)
+		.add_system(update_camera);
+
+	let mut app = App::new();
+
+	app
 		// types
 		.register_type::<Accumulator>()
 		.register_type::<Player>()
@@ -79,29 +113,19 @@ fn main() {
 		.add_startup_system(spawn_statics.after(load_assets))
 		.add_startup_system(sys_spawn_shots.after(load_assets))
 		.add_startup_system_to_stage(StartupStage::PostStartup, sys_index_statics)
-		// pre-fixed systems (once per frame)
-		.add_stage_before(CoreStage::Update, "pre-fixed", SystemStage::parallel())
-		.add_system_to_stage("pre-fixed", handle_input)
-		// fixed systems (0+ times per frame)
-		.add_fixed_timestep(Duration::from_nanos(1_000_000_000 / 60), "fixed")
-		.add_fixed_timestep_system(
-			"fixed", 0, sys_spawn_shot
-		)
-		.add_fixed_timestep_system(
-			"fixed", 0, sys_move_shots.after(sys_spawn_shot),
-		)
-		.add_fixed_timestep_system(
-			"fixed", 0, sys_move_player.after(sys_move_shots),
-		)
-		// post-fixed (once per frame)
-		.add_stage_before(CoreStage::Update, "post-fixed", SystemStage::parallel())
-		.add_system_to_stage("post-fixed", sys_write_back)
-		.add_system_to_stage("post-fixed", update_camera)
+
+		.insert_resource(tick_info)
+		.add_stage_before(CoreStage::Update, CustomStage::PreTicks, pre_ticks)
+		.add_stage_before(CoreStage::Update, CustomStage::Ticks, ticks)
+		.add_stage_before(CoreStage::Update, CustomStage::PostTicks, post_ticks)
+
 		// systems
 		.add_system(sys_collide_debug_add)
 		.add_system(sys_collide_debug_toggle)
 		.add_system(sys_inspector_toggle)
-		.add_system(sys_fps)
+		;
+
+	app
 		// run
 		.run();
 }
@@ -165,13 +189,13 @@ fn slide(v: Vec2, norm: Vec2) -> Vec2 {
 
 fn sys_move_shots(
 	mut cmds: Commands,
-	timesteps: Res<FixedTimesteps>,
 	statics: Res<Statics>,
+	tick: Res<TickInfo>,
 	mut q_shots: Query<(Entity, &Collidable, &mut Position, &mut Velocity, &mut Shot)>,
 	q_statics: Query<(Entity, &Collidable, &Position), (With<Static>, Without<Shot>)>,
 ) {
 	let statics = &statics.0;
-	let step_secs = timesteps.get_current().unwrap().step.as_secs_f32();
+	let step_secs = tick.step.as_secs_f32();
 
 	for (ent, col, mut pos, mut vel, mut shot) in &mut q_shots {
 
@@ -216,13 +240,13 @@ fn sys_move_shots(
 }
 
 fn sys_move_player(
-	timesteps: Res<FixedTimesteps>,
 	statics: Res<Statics>,
+	tick: Res<TickInfo>,
 	mut q_player: Query<(&Collidable, &mut Position, &Velocity), With<Player>>,
 	q_statics: Query<(Entity, &Collidable, &Position), (With<Static>, Without<Player>)>,
 ) {
 	let statics = &statics.0;
-	let step_secs = timesteps.get_current().unwrap().step.as_secs_f32();
+	let step_secs = tick.step.as_secs_f32();
 
 	for (col, mut pos, vel) in &mut q_player {
 		if vel.v == Vec2::ZERO {
@@ -318,13 +342,13 @@ fn spawn_shot(
 fn sys_spawn_shot(
 	mut cmds: Commands,
 	audio: Res<Audio>,
-	timesteps: Res<FixedTimesteps>,
 	sounds: Res<Sounds>,
 	textures: Res<Textures>,
+	tick: Res<TickInfo>,
 	mut q_player: Query<(&Transform, &mut Player)>
 ) {
 	let sounds = &sounds.0;
-	let step_ns = timesteps.get_current().unwrap().step.as_nanos();
+	let step_ns = tick.step.as_nanos();
 
 	let (player_t, mut player) = q_player.single_mut();
 	let dir = player_t.right().truncate();
@@ -543,6 +567,20 @@ fn sys_fps(mut metric: Local<Metric>, time: Res<Time>) {
 	if metric.total() >= 1.0 {
 		info!(
 			"frames:{}, fps:{:.2}, min:{:.2}ms, max:{:.2}ms",
+			metric.count(),
+			1.0 / metric.avg(),
+			metric.min() * 1000.0,
+			metric.max() * 1000.0,
+		);
+		metric.reset();
+	}
+}
+
+fn sys_tps(mut metric: Local<Metric>, tick: Res<TickInfo>) {
+	metric.sample(tick.step.as_secs_f32());
+	if metric.total() >= 1.0 {
+		info!(
+			"ticks:{}, tps:{:.2}, min:{:.2}ms, max:{:.2}ms",
 			metric.count(),
 			1.0 / metric.avg(),
 			metric.min() * 1000.0,
