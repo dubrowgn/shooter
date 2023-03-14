@@ -4,8 +4,7 @@ use bevy::{
 };
 use bevy_prototype_lyon::{
 	shapes::{Circle, RectangleOrigin, Rectangle},
-	prelude::{GeometryBuilder, DrawMode, StrokeMode},
-	entity::ShapeBundle,
+	prelude::{GeometryBuilder, Stroke, Path, ShapeBundle},
 };
 use crate::{debug::Debug, movement::Velocity};
 use crate::layer::Layer;
@@ -99,9 +98,9 @@ impl<'a, 'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery> TypedSimdCompositeShape f
 	}
 }
 
-fn shape_to_bundle(shape: &dyn Shape, t: &Transform, visible: bool) -> ShapeBundle {
+fn shape_to_path(shape: &dyn Shape) -> Path {
 	let builder = GeometryBuilder::new();
-	let mut bundle = match shape.as_typed_shape() {
+	match shape.as_typed_shape() {
 		TypedShape::Ball(b) => builder.add(&Circle {
 			center: Vec2::ZERO,
 			radius:b.radius,
@@ -111,15 +110,7 @@ fn shape_to_bundle(shape: &dyn Shape, t: &Transform, visible: bool) -> ShapeBund
 			origin: RectangleOrigin::Center,
 		}),
 		_ => panic!("Unimplemented shape type {:?}", shape.shape_type()),
-	}.build(
-		DrawMode::Stroke(StrokeMode::color(Color::rgb(0.8, 0.8, 0.0))),
-		Transform::from_xyz(0.0, 0.0, Layer::FG)
-			.with_rotation(-t.rotation),
-	);
-
-	bundle.visibility.is_visible = visible;
-
-	bundle
+	}.build()
 }
 
 #[derive(Component, Default, Reflect)]
@@ -135,7 +126,15 @@ pub fn sys_collide_debug_add(
 		let id = cmds.spawn((
 				CollidableDebug,
 				Name::new("CollidableDebug"),
-				shape_to_bundle(col.shape.as_ref(), t, debug.enabled),
+				ShapeBundle {
+					path: shape_to_path(col.shape.as_ref()),
+					transform: Transform::from_xyz(0.0, 0.0, Layer::FG)
+						.with_rotation(-t.rotation),
+					visibility: if debug.enabled { Visibility::Inherited } else { Visibility::Hidden },
+					..default()
+				},
+				Stroke::new(Color::rgb(0.8, 0.8, 0.0), 1.0),
+
 			))
 			.id();
 		cmds.entity(ent)
@@ -152,7 +151,7 @@ pub fn sys_collide_debug_toggle(
 	}
 
 	for mut vis in &mut q_collide {
-		vis.is_visible = debug.enabled;
+		*vis = if debug.enabled { Visibility::Inherited } else { Visibility::Hidden };
 	}
 }
 

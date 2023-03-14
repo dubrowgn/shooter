@@ -9,16 +9,16 @@ mod debug;
 mod layer;
 mod metric;
 mod movement;
-mod tick_stage;
+mod tick_schedule;
 mod time;
 
 use args::parse_args;
 use bevy::{
 	input::Input,
 	prelude::*,
-	utils::{Duration, HashMap},
+	utils::{Duration, HashMap}, window::PrimaryWindow,
 };
-use bevy_inspector_egui::{WorldInspectorPlugin, WorldInspectorParams};
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_prototype_lyon::plugin::ShapePlugin;
 use collide::{
 	Collidable,
@@ -28,23 +28,16 @@ use collide::{
 	toi,
 	ToiResult,
 };
-use debug::Debug;
+use debug::{debug_enabled, Debug};
 use layer::Layer;
 use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
 use parry2d::partitioning::Qbvh;
-use tick_stage::{TickInfo, TickStage};
+use tick_schedule::{TickInfo, TickPlugin, TickSchedule};
 use time::Accumulator;
 
 const HALF_TURN: f32 = std::f32::consts::PI;
 const QUARTER_TURN: f32 = HALF_TURN / 2.0;
-
-#[derive(Debug, StageLabel)]
-enum CustomStage {
-	PreTicks,
-	Ticks,
-	PostTicks,
-}
 
 fn main() {
 	let config = unwrap!(parse_args(), {
@@ -52,28 +45,6 @@ fn main() {
 	});
 
 	println!("{:?}", config);
-
-	let mut pre_ticks = SystemStage::parallel();
-	pre_ticks
-		.add_system(handle_input);
-
-	let tick_info = TickInfo {
-		acc: Duration::ZERO,
-		budget: Duration::from_millis(100),
-		step: Duration::from_nanos(1_000_000_000 / 60),
-	};
-	let mut ticks = TickStage::parallel();
-	ticks
-		.add_system(sys_tps)
-		.add_system(sys_spawn_shot)
-		.add_system(sys_move_shots.after(sys_spawn_shot))
-		.add_system(sys_move_player.after(sys_move_shots));
-
-	let mut post_ticks = SystemStage::parallel();
-	post_ticks
-		.add_system(sys_fps)
-		.add_system(sys_write_back)
-		.add_system(update_camera);
 
 	let mut app = App::new();
 
@@ -84,59 +55,64 @@ fn main() {
 		.register_type::<Position>()
 		.register_type::<Shot>()
 		.register_type::<Velocity>()
+
 		// resources
 		.insert_resource(ClearColor(Color::rgb(0.2, 0.2, 0.2)))
 		.insert_resource(Debug { enabled: false })
-		.insert_resource({
-			let mut params = WorldInspectorParams::default();
-			params.enabled = false;
-			params
-		})
 		.insert_resource(Sounds(HashMap::new()))
 		.insert_resource(Textures(HashMap::new()))
 		.insert_resource(Statics(Qbvh::new()))
-		// plugins
-		.add_plugins(DefaultPlugins.set(WindowPlugin {
-			window: WindowDescriptor {
-				title: "shooter".into(),
-				..default()
-			},
-			..default()
-		}))
-		.add_plugin(ShapePlugin)
-		.add_plugin(WorldInspectorPlugin::new())
-		// startup systems
-		.add_startup_system(load_assets)
-		.add_startup_system(spawn_camera)
-		.add_startup_system(spawn_player.after(load_assets))
-		.add_startup_system(spawn_bg.after(load_assets))
-		.add_startup_system(spawn_statics.after(load_assets))
-		.add_startup_system(sys_spawn_shots.after(load_assets))
-		.add_startup_system_to_stage(StartupStage::PostStartup, sys_index_statics)
 
-		.insert_resource(tick_info)
-		.add_stage_before(CoreStage::Update, CustomStage::PreTicks, pre_ticks)
-		.add_stage_before(CoreStage::Update, CustomStage::Ticks, ticks)
-		.add_stage_before(CoreStage::Update, CustomStage::PostTicks, post_ticks)
+		// plugins
+		.add_plugins(DefaultPlugins)
+		.add_plugin(ShapePlugin)
+		.add_plugin(WorldInspectorPlugin::default().run_if(debug_enabled))
+
+		// startup systems
+		.add_startup_systems((
+			sys_window_setup,
+			load_assets,
+			spawn_camera,
+			spawn_player.after(load_assets),
+			spawn_bg.after(load_assets),
+			spawn_statics.after(load_assets),
+			sys_spawn_shots.after(load_assets),
+		).in_base_set(StartupSet::Startup))
+		.add_startup_systems((
+			sys_index_statics,
+		).in_base_set(StartupSet::PostStartup))
+
+		// tick
+		.insert_resource(TickInfo {
+			acc: Duration::ZERO,
+			budget: Duration::from_millis(100),
+			step: Duration::from_nanos(1_000_000_000 / 60),
+		})
+		.add_plugin(TickPlugin)
+
+		.add_systems((
+			handle_input,
+		).in_schedule(TickSchedule::PreTicks))
+		.add_systems((
+			sys_tps,
+			sys_spawn_shot,
+			sys_move_shots.after(sys_spawn_shot),
+			sys_move_player.after(sys_move_shots),
+		).in_schedule(TickSchedule::Ticks))
+		.add_systems((
+			sys_fps,
+			sys_write_back,
+			update_camera,
+		).in_schedule(TickSchedule::PostTicks))
 
 		// systems
 		.add_system(sys_collide_debug_add)
 		.add_system(sys_collide_debug_toggle)
-		.add_system(sys_inspector_toggle)
 		;
 
 	app
 		// run
 		.run();
-}
-
-pub fn sys_inspector_toggle(
-	debug: Res<Debug>,
-	mut inspector: ResMut<WorldInspectorParams>,
-) {
-	if !debug.is_changed() {
-		inspector.enabled = debug.enabled;
-	}
 }
 
 #[derive(Resource)]
@@ -147,6 +123,10 @@ struct Textures(HashMap<String, Handle<TextureAtlas>>);
 
 #[derive(Resource)]
 struct Statics(Qbvh<EntityHandle>);
+
+fn sys_window_setup(mut window: Query<&mut Window>) {
+	window.single_mut().title = "shooter".into();
+}
 
 fn spawn_camera(mut cmds: Commands) {
 	let scale = 1.5;
@@ -594,22 +574,23 @@ fn handle_input(
 	keys: Res<Input<KeyCode>>,
 	btns: Res<Input<MouseButton>>,
 	mut debug: ResMut<Debug>,
-	mut windows: ResMut<Windows>,
 	q_camera: Query<(&Camera, &GlobalTransform), With<Camera>>,
 	mut q_player: Query<(&mut Velocity, &mut Transform, &mut Player)>,
+	mut q_windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
+	let (cam, cam_t) = q_camera.single();
+	let mut win = q_windows.single_mut();
+
 	if keys.just_pressed(KeyCode::F11) {
 		use bevy::window::WindowMode::{BorderlessFullscreen, Windowed};
 
-		let win: &mut Window = windows.primary_mut();
-		win.set_mode(if win.mode() == Windowed { BorderlessFullscreen } else { Windowed });
+		win.mode = if win.mode == Windowed { BorderlessFullscreen } else { Windowed };
 	}
 
 	if keys.just_released(KeyCode::F12) {
 		debug.enabled = !debug.enabled;
 	}
 
-	let (cam, cam_t) = q_camera.single();
 	let (mut player_v, mut player_t, mut player) = q_player.single_mut();
 
 	// shooting?
@@ -638,27 +619,19 @@ fn handle_input(
 
 	// rotation
 
-	let win = windows
-		.get_primary()
-		.unwrap();
 	let win_pos = win.cursor_position();
 	if win_pos == None {
 		return;
 	}
 
-	let win_size = Vec2::new(win.width() as f32, win.height() as f32);
+	let world_pos = win.cursor_position()
+		.and_then(|win_pos| cam.viewport_to_world_2d(cam_t, win_pos));
+	if  world_pos == None {
+		return;
+	}
 
-	// convert screen position [0..resolution] to ndc [-1..1] (gpu coordinates)
-	let ndc = win_pos.unwrap() / win_size * 2.0 - Vec2::ONE;
-
-	// matrix for undoing the projection and camera transform
-	let ndc_to_world = cam_t.compute_matrix() * cam.projection_matrix().inverse();
-
-	// use it to convert ndc to world-space coordinates
-	let world_pos = ndc_to_world.project_point3(ndc.extend(-1.0));
-
-	let delta_t = world_pos - player_t.translation;
-	let rads = Vec2::X.angle_between(delta_t.truncate());
+	let delta_t = world_pos.unwrap() - player_t.translation.truncate();
+	let rads = Vec2::X.angle_between(delta_t);
 
 	player_t.rotation = Quat::from_rotation_z(rads);
 }
