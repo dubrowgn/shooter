@@ -10,6 +10,7 @@ mod input;
 mod layer;
 mod metric;
 mod movement;
+mod net;
 mod tick_schedule;
 mod time;
 
@@ -33,8 +34,9 @@ use input::{PlayerInput, sys_player_input};
 use layer::Layer;
 use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
+use net::{client::NetClientPlugin, server::NetServerPlugin};
 use parry2d::partitioning::Qbvh;
-use tick_schedule::{TickInfo, TickPlugin, TickSchedule};
+use tick_schedule::{TickConfig, TickPlugin, TickSchedule};
 use time::Accumulator;
 
 const TURN_RADS: f32 = std::f32::consts::TAU;
@@ -87,19 +89,27 @@ fn main() {
 		))
 		.add_systems(PostStartup,
 			sys_index_statics
-		)
+		);
 
-		// tick
-		.insert_resource(TickInfo {
-			acc: Duration::ZERO,
+	// tick
+
+	app
+		.insert_resource(TickConfig {
 			budget: Duration::from_millis(100),
-			step: Duration::from_nanos(1_000_000_000 / 60),
+			interval: Duration::from_nanos(1_000_000_000 / 60),
 		})
-		.add_plugins(TickPlugin)
+		.add_plugins(TickPlugin);
+	if config.server == None {
+		app.add_plugins(NetServerPlugin);
+	} else {
+		// TODO -- send endpoint config
+		app.add_plugins(NetClientPlugin);
+	}
 
+	app
 		.insert_resource(PlayerInput::default())
 		.add_systems(TickSchedule::PreTicks, (
-			sys_player_input,
+			sys_player_input, // TODO -- run per tick; avoid dropping input
 			sys_apply_input.after(sys_player_input),
 		))
 		.add_systems(TickSchedule::Ticks, (
@@ -179,12 +189,12 @@ fn slide(v: Vec2, norm: Vec2) -> Vec2 {
 fn sys_move_shots(
 	mut cmds: Commands,
 	statics: Res<Statics>,
-	tick: Res<TickInfo>,
+	tick: Res<TickConfig>,
 	mut q_shots: Query<(Entity, &Collidable, &mut Position, &mut Velocity, &mut Shot)>,
 	q_statics: Query<(Entity, &Collidable, &Position), (With<Static>, Without<Shot>)>,
 ) {
 	let statics = &statics.0;
-	let step_secs = tick.step.as_secs_f32();
+	let step_secs = tick.interval.as_secs_f32();
 
 	for (ent, col, mut pos, mut vel, mut shot) in &mut q_shots {
 
@@ -230,12 +240,12 @@ fn sys_move_shots(
 
 fn sys_move_player(
 	statics: Res<Statics>,
-	tick: Res<TickInfo>,
+	tick: Res<TickConfig>,
 	mut q_player: Query<(&Collidable, &mut Position, &Velocity), With<Player>>,
 	q_statics: Query<(Entity, &Collidable, &Position), (With<Static>, Without<Player>)>,
 ) {
 	let statics = &statics.0;
-	let step_secs = tick.step.as_secs_f32();
+	let step_secs = tick.interval.as_secs_f32();
 
 	for (col, mut pos, vel) in &mut q_player {
 		if vel.v == Vec2::ZERO {
@@ -332,11 +342,11 @@ fn sys_spawn_shot(
 	mut cmds: Commands,
 	sounds: Res<Sounds>,
 	textures: Res<Textures>,
-	tick: Res<TickInfo>,
+	tick: Res<TickConfig>,
 	mut q_player: Query<(&Transform, &mut Player)>
 ) {
 	let sounds = &sounds.0;
-	let step_ns = tick.step.as_nanos();
+	let step_ns = tick.interval.as_nanos();
 
 	let (player_t, mut player) = q_player.single_mut();
 	let dir = player_t.right().truncate();
@@ -562,8 +572,8 @@ fn sys_fps(mut metric: Local<Metric>, time: Res<Time>) {
 	}
 }
 
-fn sys_tps(mut metric: Local<Metric>, tick: Res<TickInfo>) {
-	metric.sample(tick.step.as_secs_f32());
+fn sys_tps(mut metric: Local<Metric>, tick: Res<TickConfig>) {
+	metric.sample(tick.interval.as_secs_f32());
 	if metric.total() >= 1.0 {
 		info!(
 			"ticks:{}, tps:{:.2}, min:{:.2}ms, max:{:.2}ms",
