@@ -6,15 +6,17 @@ mod macros;
 mod args;
 mod collide;
 mod debug;
+mod input;
 mod layer;
 mod metric;
 mod movement;
 mod tick_schedule;
 mod time;
 
+use std::f32::consts::TAU;
+
 use args::parse_args;
 use bevy::{
-	input::Input,
 	prelude::*,
 	utils::{Duration, HashMap}, window::PrimaryWindow,
 };
@@ -29,6 +31,7 @@ use collide::{
 	ToiResult,
 };
 use debug::{debug_enabled, Debug};
+use input::{PlayerInput, sys_player_input};
 use layer::Layer;
 use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
@@ -95,9 +98,11 @@ fn main() {
 		})
 		.add_plugins(TickPlugin)
 
-		.add_systems(TickSchedule::PreTicks,
-			handle_input,
-		)
+		.insert_resource(PlayerInput::default())
+		.add_systems(TickSchedule::PreTicks, (
+			sys_player_input,
+			sys_apply_input.after(sys_player_input),
+		))
 		.add_systems(TickSchedule::Ticks, (
 			sys_tps,
 			sys_spawn_shot,
@@ -572,68 +577,37 @@ fn sys_tps(mut metric: Local<Metric>, tick: Res<TickInfo>) {
 	}
 }
 
-fn handle_input(
-	keys: Res<Input<KeyCode>>,
-	btns: Res<Input<MouseButton>>,
+fn sys_apply_input(
+	input: Res<PlayerInput>,
 	mut debug: ResMut<Debug>,
-	q_camera: Query<(&Camera, &GlobalTransform), With<Camera>>,
 	mut q_player: Query<(&mut Velocity, &mut Transform, &mut Player)>,
 	mut q_windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-	let (cam, cam_t) = q_camera.single();
 	let mut win = q_windows.single_mut();
 
-	if keys.just_pressed(KeyCode::F11) {
-		use bevy::window::WindowMode::{BorderlessFullscreen, Windowed};
-
-		win.mode = if win.mode == Windowed { BorderlessFullscreen } else { Windowed };
+	use bevy::window::WindowMode::{BorderlessFullscreen, Windowed};
+	if input.full_screen && win.mode != BorderlessFullscreen {
+		win.mode = BorderlessFullscreen;
+	} else if !input.full_screen && win.mode != Windowed {
+		win.mode = Windowed;
 	}
 
-	if keys.just_released(KeyCode::F12) {
-		debug.enabled = !debug.enabled;
+	if input.debug != debug.enabled {
+		debug.enabled = input.debug;
 	}
 
 	let (mut player_v, mut player_t, mut player) = q_player.single_mut();
 
-	// shooting?
-	if btns.just_pressed(MouseButton::Left) {
+	// shooting
+
+	if input.primary && player.shot_acc.is_none() {
 		player.shot_acc = Some(Accumulator::ready_from_millis(100));
-	} else if btns.just_released(MouseButton::Left) {
+	} else if !input.primary && player.shot_acc.is_some() {
 		player.shot_acc = None;
 	}
 
-	// velocity
+	// player transform
 
-	let mut d = Vec2::ZERO;
-	if keys.pressed(KeyCode::W) {
-		d.y += 1.0;
-	}
-	if keys.pressed(KeyCode::S) {
-		d.y -= 1.0;
-	}
-	if keys.pressed(KeyCode::A) {
-		d.x -= 1.0;
-	}
-	if keys.pressed(KeyCode::D) {
-		d.x += 1.0;
-	}
-	player_v.v = 900.0f32 * d.normalize_or_zero();
-
-	// rotation
-
-	let win_pos = win.cursor_position();
-	if win_pos == None {
-		return;
-	}
-
-	let world_pos = win.cursor_position()
-		.and_then(|win_pos| cam.viewport_to_world_2d(cam_t, win_pos));
-	if  world_pos == None {
-		return;
-	}
-
-	let delta_t = world_pos.unwrap() - player_t.translation.truncate();
-	let rads = Vec2::X.angle_between(delta_t);
-
-	player_t.rotation = Quat::from_rotation_z(rads);
+	player_v.v = 900.0f32 * input.dir;
+	player_t.rotation = Quat::from_rotation_z(input.face_turns * TAU);
 }
