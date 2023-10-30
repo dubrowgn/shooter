@@ -63,7 +63,7 @@ impl Plugin for TickPlugin {
 			.add_schedule(TickSchedule::PreTicks, multi_thread_schedule())
 			.add_schedule(TickSchedule::Ticks, multi_thread_schedule())
 			.add_schedule(TickSchedule::PostTicks, multi_thread_schedule())
-			.add_system(sys_run_tick_schedules);
+			.add_systems(Update, sys_run_tick_schedules);
     }
 }
 

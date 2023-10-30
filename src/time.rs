@@ -1,7 +1,7 @@
-use bevy::reflect::{FromReflect, Reflect};
+use bevy::reflect::Reflect;
 use std::ops::Range;
 
-#[derive(Clone, Debug, FromReflect, Reflect)]
+#[derive(Clone, Debug, Reflect)]
 pub struct Accumulator {
 	acc_ns: u64,
 	interval_ns: u64,

@@ -64,23 +64,28 @@ fn main() {
 		.insert_resource(Statics(Qbvh::new()))
 
 		// plugins
-		.add_plugins(DefaultPlugins)
-		.add_plugin(ShapePlugin)
-		.add_plugin(WorldInspectorPlugin::default().run_if(debug_enabled))
+		.add_plugins((
+			DefaultPlugins,
+			ShapePlugin,
+			WorldInspectorPlugin::default()
+				.run_if(debug_enabled),
+		))
 
 		// startup systems
-		.add_startup_systems((
+		.add_systems(Startup,	(
 			sys_window_setup,
 			load_assets,
 			spawn_camera,
-			spawn_player.after(load_assets),
-			spawn_bg.after(load_assets),
-			spawn_statics.after(load_assets),
-			sys_spawn_shots.after(load_assets),
-		).in_base_set(StartupSet::Startup))
-		.add_startup_systems((
-			sys_index_statics,
-		).in_base_set(StartupSet::PostStartup))
+			(
+				spawn_bg,
+				spawn_player,
+				spawn_statics,
+				sys_spawn_shots,
+			).after(load_assets),
+		))
+		.add_systems(PostStartup,
+			sys_index_statics
+		)
 
 		// tick
 		.insert_resource(TickInfo {
@@ -88,26 +93,26 @@ fn main() {
 			budget: Duration::from_millis(100),
 			step: Duration::from_nanos(1_000_000_000 / 60),
 		})
-		.add_plugin(TickPlugin)
+		.add_plugins(TickPlugin)
 
-		.add_systems((
+		.add_systems(TickSchedule::PreTicks,
 			handle_input,
-		).in_schedule(TickSchedule::PreTicks))
-		.add_systems((
+		)
+		.add_systems(TickSchedule::Ticks, (
 			sys_tps,
 			sys_spawn_shot,
-			sys_move_shots.after(sys_spawn_shot),
-			sys_move_player.after(sys_move_shots),
-		).in_schedule(TickSchedule::Ticks))
-		.add_systems((
+			(sys_move_shots).after(sys_spawn_shot),
+			(sys_move_player).after(sys_move_shots),
+		))
+		.add_systems(TickSchedule::PostTicks, (
 			sys_fps,
 			sys_write_back,
 			update_camera,
-		).in_schedule(TickSchedule::PostTicks))
+		))
 
 		// systems
-		.add_system(sys_collide_debug_add)
-		.add_system(sys_collide_debug_toggle)
+		.add_systems(Update, sys_collide_debug_add)
+		.add_systems(Update, sys_collide_debug_toggle)
 		;
 
 	app
@@ -321,7 +326,6 @@ fn spawn_shot(
 
 fn sys_spawn_shot(
 	mut cmds: Commands,
-	audio: Res<Audio>,
 	sounds: Res<Sounds>,
 	textures: Res<Textures>,
 	tick: Res<TickInfo>,
@@ -337,14 +341,12 @@ fn sys_spawn_shot(
 	if let Some(acc) = &mut player.shot_acc {
 		for _ in acc.advance(step_ns as u64) {
 			spawn_shot(&mut cmds, &textures, pos, dir);
-			audio.play_with_settings(
-				sounds.get("laser/1").unwrap().clone(),
-				PlaybackSettings {
-					repeat: false,
-					speed: 1.0,
-					volume: 1.0,
+			cmds.spawn((
+				AudioBundle {
+					source: sounds.get("laser/1").unwrap().clone(),
+					..default()
 				},
-			);
+			));
 		}
 	}
 }
