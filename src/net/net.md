@@ -2,6 +2,8 @@
 
 ## References
 
+### General
+
 * https://gafferongames.com/
   * https://gafferongames.com/post/fix_your_timestep/
   * https://gafferongames.com/post/what_every_programmer_needs_to_know_about_game_networking/
@@ -10,3 +12,7 @@
   * \<loads more\>
 * https://www.gamedevs.org/uploads/tribes-networking-model.pdf
 * https://www.gamedeveloper.com/programming/1500-archers-on-a-28-8-network-programming-in-age-of-empires-and-beyond
+
+### Naia
+
+* https://blog.snen.dev/building-with-bevy/03-integrating-online-networking
