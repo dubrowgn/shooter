@@ -30,7 +30,7 @@ use collide::{
 	ToiResult,
 };
 use debug::{debug_enabled, Debug};
-use input::{PlayerInput, sys_player_input};
+use input::{PlayerInput, sys_input_type, sys_player_input};
 use layer::Layer;
 use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
@@ -56,6 +56,7 @@ fn main() {
 		// types
 		.register_type::<Accumulator>()
 		.register_type::<Player>()
+		.register_type::<PlayerInput>()
 		.register_type::<Position>()
 		.register_type::<Shot>()
 		.register_type::<Velocity>()
@@ -109,7 +110,8 @@ fn main() {
 	app
 		.insert_resource(PlayerInput::default())
 		.add_systems(TickSchedule::PreTicks, (
-			sys_player_input, // TODO -- run per tick; avoid dropping input
+			sys_input_type,
+			sys_player_input.after(sys_input_type), // TODO -- run per tick; avoid dropping input
 			sys_apply_input.after(sys_player_input),
 		))
 		.add_systems(TickSchedule::Ticks, (
