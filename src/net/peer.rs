@@ -14,7 +14,8 @@ pub fn sys_run_tick_schedules(world: &mut World) {
 		let start = Instant::now();
 		while state.steps > 0 && Instant::now() - start <= budget {
 			state.steps -= 1;
-			world.run_schedule(TickSchedule::Ticks);
+			world.run_schedule(TickSchedule::Input);
+			world.run_schedule(TickSchedule::Tick);
 		}
 	});
 

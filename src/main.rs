@@ -17,7 +17,8 @@ mod time;
 use args::parse_args;
 use bevy::{
 	prelude::*,
-	utils::{Duration, HashMap}, window::PrimaryWindow,
+	utils::{Duration, HashMap},
+	window::PrimaryWindow,
 };
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_prototype_lyon::plugin::ShapePlugin;
@@ -30,7 +31,14 @@ use collide::{
 	ToiResult,
 };
 use debug::{debug_enabled, Debug};
-use input::{PlayerInput, sys_input_type, sys_player_input};
+use input::{
+	tick_input_plugin::TickInputPlugin,
+	interpret::{
+		PlayerInput,
+		sys_input_type,
+		sys_player_input,
+	},
+};
 use layer::Layer;
 use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
@@ -63,20 +71,36 @@ fn main() {
 
 		// resources
 		.insert_resource(ClearColor(Color::rgb(0.2, 0.2, 0.2)))
-		.insert_resource(Debug { enabled: false })
+		.insert_resource(Debug::default())
+		.insert_resource(PlayerInput::default())
 		.insert_resource(Sounds(HashMap::new()))
-		.insert_resource(Textures(HashMap::new()))
 		.insert_resource(Statics(Qbvh::new()))
+		.insert_resource(Textures(HashMap::new()))
+		.insert_resource(TickConfig {
+			budget: Duration::from_millis(100),
+			interval: Duration::from_nanos(1_000_000_000 / 60),
+		})
 
 		// plugins
 		.add_plugins((
+			TickPlugin,
+			// InputOverridePlugin must come before DefaultPlugins
+			TickInputPlugin,
 			DefaultPlugins,
 			ShapePlugin,
 			WorldInspectorPlugin::default()
 				.run_if(debug_enabled),
-		))
+		));
 
-		// startup systems
+	if config.server == None {
+		app.add_plugins(NetServerPlugin);
+	} else {
+		// TODO -- send endpoint config
+		app.add_plugins(NetClientPlugin);
+	}
+
+	app
+		// systems
 		.add_systems(Startup,	(
 			sys_window_setup,
 			load_assets,
@@ -90,50 +114,30 @@ fn main() {
 		))
 		.add_systems(PostStartup,
 			sys_index_statics
-		);
-
-	// tick
-
-	app
-		.insert_resource(TickConfig {
-			budget: Duration::from_millis(100),
-			interval: Duration::from_nanos(1_000_000_000 / 60),
-		})
-		.add_plugins(TickPlugin);
-	if config.server == None {
-		app.add_plugins(NetServerPlugin);
-	} else {
-		// TODO -- send endpoint config
-		app.add_plugins(NetClientPlugin);
-	}
-
-	app
-		.insert_resource(PlayerInput::default())
-		.add_systems(TickSchedule::PreTicks, (
-			sys_input_type,
-			sys_player_input.after(sys_input_type), // TODO -- run per tick; avoid dropping input
-			sys_apply_input.after(sys_player_input),
+		)
+		.add_systems(Update, (
+			sys_collide_debug_add,
+			sys_collide_debug_toggle,
 		))
-		.add_systems(TickSchedule::Ticks, (
+		.add_systems(TickSchedule::Tick, (
 			sys_tps,
-			sys_spawn_shot,
-			(sys_move_shots).after(sys_spawn_shot),
-			(sys_move_player).after(sys_move_shots),
+			(
+				sys_input_type,
+				sys_player_input,
+				sys_apply_input,
+				sys_spawn_shot,
+				sys_move_shots,
+				sys_move_player,
+			).chain(),
 		))
 		.add_systems(TickSchedule::PostTicks, (
 			sys_fps,
 			sys_write_back,
 			update_camera,
 		))
-
-		// systems
-		.add_systems(Update, sys_collide_debug_add)
-		.add_systems(Update, sys_collide_debug_toggle)
 		;
 
-	app
-		// run
-		.run();
+	app.run();
 }
 
 #[derive(Resource)]

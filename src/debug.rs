@@ -3,7 +3,7 @@ use bevy::ecs::{
 	system::Resource,
 };
 
-#[derive(Debug, Resource)]
+#[derive(Debug, Default, Resource)]
 pub struct Debug {
 	pub enabled: bool,
 }

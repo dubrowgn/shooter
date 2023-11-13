@@ -1,8 +1,20 @@
+use bevy::{
+	input::{
+		gamepad::{
+			GamepadButton,
+			GamepadEvent,
+		},
+		keyboard::KeyboardInput,
+	},
+	prelude::*,
+	window::PrimaryWindow,
+};
 use std::f32::consts::TAU;
-
-use bevy::input::keyboard::KeyboardInput;
-use bevy::{prelude::*, window::PrimaryWindow};
-use bevy::input::gamepad::{GamepadButton, GamepadEvent};
+use super::tick_input_plugin::{
+	Gamepad,
+	Keyboard,
+	Mouse,
+};
 
 #[derive(Default, Reflect)]
 pub enum InputType {
@@ -54,41 +66,42 @@ pub fn sys_input_type	(
 
 pub fn sys_player_input(
 	input: ResMut<PlayerInput>,
-	keyboard: Res<Input<KeyCode>>,
-	mouse: Res<Input<MouseButton>>,
+	keyboard: Res<Keyboard>,
+	mouse: Res<Mouse>,
 	q_camera: Query<(&Camera, &GlobalTransform), With<Camera>>,
 	q_window: Query<&Window, With<PrimaryWindow>>,
 	gamepads: Res<Gamepads>,
-	button_inputs: Res<Input<GamepadButton>>,
-	button_axes: Res<Axis<GamepadButton>>,
+	gamepad: Res<Gamepad>,
 	axes: Res<Axis<GamepadAxis>>,
 ) {
 	match input.input_type {
 		InputType::Keyboard => keyboard_input(input, keyboard, mouse, q_camera, q_window),
-		InputType::Gamepad => gamepad_input(input, gamepads, button_inputs, button_axes, axes),
+		InputType::Gamepad => gamepad_input(input, gamepads, gamepad, axes),
 	}
 }
 
 fn keyboard_input(
 	mut input: ResMut<PlayerInput>,
-	keyboard: Res<Input<KeyCode>>,
-	mouse: Res<Input<MouseButton>>,
+	keyboard: Res<Keyboard>,
+	mouse: Res<Mouse>,
 	q_camera: Query<(&Camera, &GlobalTransform), With<Camera>>,
 	q_window: Query<&Window, With<PrimaryWindow>>,
 ) {
+	let keys = &keyboard.keys;
+
 	// direction
 
 	let mut dir = Vec2::ZERO;
-	if keyboard.pressed(KeyCode::W) {
+	if keys.pressed(KeyCode::W) {
 		dir.y += 1.0;
 	}
-	if keyboard.pressed(KeyCode::S) {
+	if keys.pressed(KeyCode::S) {
 		dir.y -= 1.0;
 	}
-	if keyboard.pressed(KeyCode::A) {
+	if keys.pressed(KeyCode::A) {
 		dir.x -= 1.0;
 	}
-	if keyboard.pressed(KeyCode::D) {
+	if keys.pressed(KeyCode::D) {
 		dir.x += 1.0;
 	}
 	input.dir = dir.normalize_or_zero();
@@ -108,13 +121,13 @@ fn keyboard_input(
 
 	// misc
 
-	input.primary = mouse.pressed(MouseButton::Left);
+	input.primary = mouse.buttons.pressed(MouseButton::Left);
 
-	if keyboard.just_released(KeyCode::F11) {
+	if keys.just_released(KeyCode::F11) {
 		input.full_screen = !input.full_screen;
 	}
 
-	if keyboard.just_released(KeyCode::F12) {
+	if keys.just_released(KeyCode::F12) {
 		input.debug = !input.debug;
 	}
 }
@@ -122,52 +135,52 @@ fn keyboard_input(
 fn gamepad_input(
 	mut input: ResMut<PlayerInput>,
 	gamepads: Res<Gamepads>,
-	button_inputs: Res<Input<GamepadButton>>,
-	button_axes: Res<Axis<GamepadButton>>,
+	gamepad: Res<Gamepad>,
 	axes: Res<Axis<GamepadAxis>>,
 ) {
-	for gamepad in gamepads.iter() {
+	for id in gamepads.iter() {
 
 		// direction
 
-		let left_stick_x = axes
-			.get(GamepadAxis::new(gamepad, GamepadAxisType::LeftStickX))
-			.unwrap();
-		let left_stick_y = axes
-			.get(GamepadAxis::new(gamepad, GamepadAxisType::LeftStickY))
-			.unwrap();
-		let dir = Vec2::new(left_stick_x, left_stick_y);
+		let mut dir = Vec2::ZERO;
+		let btn_left_x = GamepadAxis::new(id, GamepadAxisType::LeftStickX);
+		if let Some(left_stick_x) = axes.get(btn_left_x) {
+			dir.x = left_stick_x;
+		}
+		let btn_left_y = GamepadAxis::new(id, GamepadAxisType::LeftStickY);
+		if let Some(left_stick_y) = axes.get(btn_left_y) {
+			dir.y = left_stick_y;
+		}
 		input.dir = dir;
 
 		// face
 
-		let right_stick_x = axes
-			.get(GamepadAxis::new(gamepad, GamepadAxisType::RightStickX))
-			.unwrap();
-		let right_stick_y = axes
-			.get(GamepadAxis::new(gamepad, GamepadAxisType::RightStickY))
-			.unwrap();
-		if right_stick_x != 0.0 && right_stick_y != 0.0 {
-			let delta = Vec2::new(right_stick_x, right_stick_y);
-			input.face_turns = Vec2::X.angle_between(delta) / TAU;
+		let mut face = Vec2::ZERO;
+		let btn_right_x = GamepadAxis::new(id, GamepadAxisType::RightStickX);
+		if let Some(right_stick_x) = axes.get(btn_right_x) {
+			face.x = right_stick_x;
+		}
+		let btn_right_y = GamepadAxis::new(id, GamepadAxisType::RightStickY);
+		if let Some(right_stick_y) = axes.get(btn_right_y) {
+			face.y = right_stick_y;
+		}
+		if face != Vec2::ZERO {
+			input.face_turns = Vec2::X.angle_between(face) / TAU;
 		}
 
 		// action
 
-		let right_trigger = button_axes
-			.get(GamepadButton::new(
-				gamepad,
-				GamepadButtonType::RightTrigger2,
-			))
-			.unwrap();
-		input.primary = right_trigger.abs() >= 0.05;
+		let btn_rt2 = GamepadButton::new(id, GamepadButtonType::RightTrigger2);
+		if let Some(right_trigger) = gamepad.axis.get(btn_rt2) {
+			input.primary = right_trigger.abs() >= 0.05;
+		}
 
 		// misc
 
-		if button_inputs.just_pressed(GamepadButton::new(gamepad, GamepadButtonType::North)){
+		if gamepad.buttons.just_pressed(GamepadButton::new(id, GamepadButtonType::North)){
 			input.full_screen = !input.full_screen
 		}
-		if button_inputs.just_pressed(GamepadButton::new(gamepad, GamepadButtonType::West)) {
+		if gamepad.buttons.just_pressed(GamepadButton::new(id, GamepadButtonType::West)) {
 			input.debug = !input.debug;
 		}
 	}
