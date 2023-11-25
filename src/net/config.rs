@@ -9,7 +9,7 @@ use naia_bevy_shared::{
 };
 use std::time::Duration;
 
-use super::msg::Auth;
+use super::msg;
 
 // ~= 60fps
 const TICK_INTERVAL: Duration = Duration::from_nanos(16_666_667);
@@ -37,7 +37,8 @@ fn protocol(link_cond: Option<LinkConditionerConfig>) -> Protocol {
 			ChannelDirection::ServerToClient,
 			ChannelMode::UnorderedReliable(ReliableSettings::default()),
 		)
-		.add_message::<Auth>()
+		.add_message::<msg::Auth>()
+		.add_message::<msg::Input>()
 		.build()
 }
 

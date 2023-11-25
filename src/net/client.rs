@@ -1,24 +1,26 @@
+use std::f32::consts::TAU;
+
 use bevy::prelude::*;
 use naia_bevy_client::{
 	Client,
 	ClientConfig,
-	events::{ConnectEvent, DisconnectEvent, RejectEvent, ServerTickEvent},
+	events::{ConnectEvent, DisconnectEvent, RejectEvent, ServerTickEvent, ErrorEvent, ClientTickEvent},
 	Plugin as NaiaClientPlugin,
 	transport::udp,
 };
 use super::{
-	config,
-	msg::Auth,
-	peer::{sys_run_tick_schedules, udp_sock_addr},
+	config::{self, PlayerCommandChannel},
+	msg,
+	peer::*,
 };
-use crate::tick_schedule::{TickSchedule, single_thread_schedule, TickState};
+use crate::{tick_schedule::{TickSchedule, single_thread_schedule}, input::interpret::PlayerInput};
 
 pub struct NetClientPlugin;
 
 impl Plugin for NetClientPlugin {
 	fn build(&self, app: &mut App) {
 		app
-			.insert_resource(TickState { steps: 0 })
+			.insert_resource(TickState::default())
 			.add_plugins(NaiaClientPlugin::new(
 				ClientConfig::default(),
 				config::global_avg(), // TODO -- use actual TickConfig.interval
@@ -27,10 +29,15 @@ impl Plugin for NetClientPlugin {
 			.add_systems(TickSchedule::Network, (
 				sys_event_connect,
 				sys_event_disconnect,
+				sys_event_error,
 				sys_event_reject,
 			))
 			.add_systems(TickSchedule::PreTicks, (
 				sys_consume_tick_events,
+			))
+			.add_schedule(TickSchedule::InputSend, single_thread_schedule())
+			.add_systems(TickSchedule::InputSend, (
+				sys_send_input,
 			))
 			.add_systems(Update, sys_run_tick_schedules)
 			.add_systems(Startup, sys_connect);
@@ -39,9 +46,14 @@ impl Plugin for NetClientPlugin {
 
 fn sys_consume_tick_events(
 	mut state: ResMut<TickState>,
-	mut ticks: EventReader<ServerTickEvent>,
+	mut ticks: EventReader<ClientTickEvent>,
 ) {
-	state.steps += ticks.len();
+	// FIXME -- input driven by client ticks, simulation driven by server ticks
+	state.ticks_pending += ticks.len();
+	for t in ticks.iter() {
+		state.cur_tick = t.0;
+		break;
+	}
 	ticks.clear();
 }
 
@@ -49,7 +61,7 @@ pub fn sys_connect(mut client: Client) {
 	let addr = udp_sock_addr((127, 0, 0, 1), 5323);
 	let sock = udp::Socket::new(&addr, None);
 
-	client.auth(Auth::new("token-content"));
+	client.auth(msg::Auth::new("token-content"));
 	client.connect(sock);
 }
 
@@ -69,10 +81,29 @@ pub fn sys_event_disconnect(mut events: EventReader<DisconnectEvent>, client: Cl
 	}
 }
 
+pub fn sys_event_error(mut events: EventReader<ErrorEvent>) {
+	for ErrorEvent(err) in events.iter() {
+		error!("{}", err);
+	}
+}
+
 pub fn sys_event_reject(mut events: EventReader<RejectEvent>, client: Client) {
 	for _event in events.iter() {
 		if let Ok(server_address) = client.server_address() {
 			info!("Rejected by server {}", server_address);
 		}
 	}
+}
+
+pub fn sys_send_input(mut client: Client, input: Res<PlayerInput>, state: Res<TickState>) {
+	let cursor: Vec2 = Vec2::from_angle(input.face_turns * TAU);
+	let msg = msg::Input {
+		cursor_dx: cursor.x,
+		cursor_dy: cursor.y,
+		velocity_x: input.dir.x,
+		velocity_y: input.dir.y,
+		primary: input.primary,
+	};
+	//info!("sys_xmit_input {:?}: {:?}", state.cur_tick, msg);
+	client.send_tick_buffer_message::<PlayerCommandChannel, msg::Input>(&state.cur_tick, &msg);
 }

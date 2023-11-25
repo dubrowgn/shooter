@@ -92,6 +92,8 @@ pub fn sys_collect_gamepad_events(
         let btn = GamepadButton::new(event.gamepad, event.button_type);
         let prop = settings.get_button_settings(btn);
 
+		// TODO: https://github.com/bevyengine/bevy/commit/60bbfd78acda269112039658998b68183a98ed0f
+		// ~bevy 0.13?
         if event.value <= prop.release_threshold() {
             gamepad.buttons.release(btn);
         } else if event.value >= prop.press_threshold() {
@@ -119,7 +121,7 @@ impl Plugin for TickInputPlugin {
 			.init_resource::<Keyboard>()
 			.init_resource::<Mouse>()
 
-			.add_systems(TickSchedule::Input, (
+			.add_systems(TickSchedule::InputCollect, (
 				sys_collect_gamepad_events,
 				sys_collect_keyboard_events,
 				sys_collect_mouse_events,

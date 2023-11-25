@@ -65,7 +65,7 @@ pub fn sys_input_type	(
 }
 
 pub fn sys_player_input(
-	input: ResMut<PlayerInput>,
+	mut input: ResMut<PlayerInput>,
 	keyboard: Res<Keyboard>,
 	mouse: Res<Mouse>,
 	q_camera: Query<(&Camera, &GlobalTransform), With<Camera>>,
@@ -75,13 +75,13 @@ pub fn sys_player_input(
 	axes: Res<Axis<GamepadAxis>>,
 ) {
 	match input.input_type {
-		InputType::Keyboard => keyboard_input(input, keyboard, mouse, q_camera, q_window),
-		InputType::Gamepad => gamepad_input(input, gamepads, gamepad, axes),
+		InputType::Keyboard => keyboard_input(&mut input, keyboard, mouse, q_camera, q_window),
+		InputType::Gamepad => gamepad_input(&mut input, gamepads, gamepad, axes),
 	}
 }
 
 fn keyboard_input(
-	mut input: ResMut<PlayerInput>,
+	input: &mut ResMut<PlayerInput>,
 	keyboard: Res<Keyboard>,
 	mouse: Res<Mouse>,
 	q_camera: Query<(&Camera, &GlobalTransform), With<Camera>>,
@@ -133,7 +133,7 @@ fn keyboard_input(
 }
 
 fn gamepad_input(
-	mut input: ResMut<PlayerInput>,
+	input: &mut ResMut<PlayerInput>,
 	gamepads: Res<Gamepads>,
 	gamepad: Res<Gamepad>,
 	axes: Res<Axis<GamepadAxis>>,

@@ -9,14 +9,10 @@ pub struct TickConfig {
 	pub interval: Duration,
 }
 
-#[derive(Clone, Copy, Resource)]
-pub struct TickState {
-	pub steps: usize,
-}
-
 #[derive(ScheduleLabel, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum TickSchedule {
-	Input,
+	InputCollect,
+	InputSend,
 	Network,
 	PreTicks,
 	Tick,
@@ -28,8 +24,7 @@ pub struct TickPlugin;
 impl Plugin for TickPlugin {
 	fn build(&self, app: &mut App) {
 		app
-			.add_schedule(TickSchedule::Input, multi_thread_schedule())
-			.add_schedule(TickSchedule::Network, multi_thread_schedule())
+			.add_schedule(TickSchedule::InputCollect, multi_thread_schedule())
 			.add_schedule(TickSchedule::PreTicks, multi_thread_schedule())
 			.add_schedule(TickSchedule::Tick, multi_thread_schedule())
 			.add_schedule(TickSchedule::PostTicks, multi_thread_schedule());

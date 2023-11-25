@@ -1,6 +1,19 @@
-use bevy::prelude::{Mut, World};
-use std::{time::Instant, net::{IpAddr, SocketAddr, Ipv4Addr}};
-use crate::tick_schedule::{TickSchedule, TickConfig, TickState};
+use bevy::{
+	ecs::system::Resource,
+	prelude::*,
+};
+use naia_bevy_shared::Tick;
+use std::{
+	net::{IpAddr, SocketAddr, Ipv4Addr},
+	time::Instant,
+};
+use crate::tick_schedule::{TickSchedule, TickConfig};
+
+#[derive(Clone, Copy, Default, Resource)]
+pub struct TickState {
+	pub cur_tick: Tick,
+	pub ticks_pending: usize,
+}
 
 pub fn sys_run_tick_schedules(world: &mut World) {
 	world.run_schedule(TickSchedule::Network);
@@ -12,10 +25,16 @@ pub fn sys_run_tick_schedules(world: &mut World) {
 
 	world.resource_scope(|world: &mut World, mut state: Mut<TickState>| {
 		let start = Instant::now();
-		while state.steps > 0 && Instant::now() - start <= budget {
-			state.steps -= 1;
-			world.run_schedule(TickSchedule::Input);
+		while state.ticks_pending > 0 && Instant::now() - start <= budget {
+			state.ticks_pending -= 1;
+
+			world.insert_resource(*state); // FIXME ???
+			world.run_schedule(TickSchedule::InputCollect);
+			world.run_schedule(TickSchedule::InputSend);
 			world.run_schedule(TickSchedule::Tick);
+			world.remove_resource::<TickState>();
+
+			state.cur_tick = state.cur_tick.wrapping_add(1);
 		}
 	});
 
