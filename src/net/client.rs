@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use naia_bevy_client::{
 	Client,
 	ClientConfig,
-	events::{ConnectEvent, DisconnectEvent, RejectEvent, ServerTickEvent, ErrorEvent, ClientTickEvent},
+	events::{ConnectEvent, DisconnectEvent, RejectEvent, ErrorEvent, ClientTickEvent},
 	Plugin as NaiaClientPlugin,
 	transport::udp,
 };
@@ -25,7 +25,7 @@ impl Plugin for NetClientPlugin {
 				ClientConfig::default(),
 				config::global_avg(), // TODO -- use actual TickConfig.interval
 			))
-			.add_schedule(TickSchedule::Network, single_thread_schedule())
+			.add_schedule(single_thread_schedule(TickSchedule::Network))
 			.add_systems(TickSchedule::Network, (
 				sys_event_connect,
 				sys_event_disconnect,
@@ -35,7 +35,7 @@ impl Plugin for NetClientPlugin {
 			.add_systems(TickSchedule::PreTicks, (
 				sys_consume_tick_events,
 			))
-			.add_schedule(TickSchedule::InputSend, single_thread_schedule())
+			.add_schedule(single_thread_schedule(TickSchedule::InputSend))
 			.add_systems(TickSchedule::InputSend, (
 				sys_send_input,
 			))
@@ -50,7 +50,7 @@ fn sys_consume_tick_events(
 ) {
 	// FIXME -- input driven by client ticks, simulation driven by server ticks
 	state.ticks_pending += ticks.len();
-	for t in ticks.iter() {
+	for t in ticks.read() {
 		state.cur_tick = t.0;
 		break;
 	}
@@ -66,7 +66,7 @@ pub fn sys_connect(mut client: Client) {
 }
 
 pub fn sys_event_connect(mut events: EventReader<ConnectEvent>, client: Client) {
-	for _event in events.iter() {
+	for _event in events.read() {
 		if let Ok(server_address) = client.server_address() {
 			info!("Connected to server {}", server_address);
 		}
@@ -74,7 +74,7 @@ pub fn sys_event_connect(mut events: EventReader<ConnectEvent>, client: Client) 
 }
 
 pub fn sys_event_disconnect(mut events: EventReader<DisconnectEvent>, client: Client) {
-	for _event in events.iter() {
+	for _event in events.read() {
 		if let Ok(server_address) = client.server_address() {
 			info!("Disconnected from server {}", server_address);
 		}
@@ -82,13 +82,13 @@ pub fn sys_event_disconnect(mut events: EventReader<DisconnectEvent>, client: Cl
 }
 
 pub fn sys_event_error(mut events: EventReader<ErrorEvent>) {
-	for ErrorEvent(err) in events.iter() {
+	for ErrorEvent(err) in events.read() {
 		error!("{}", err);
 	}
 }
 
 pub fn sys_event_reject(mut events: EventReader<RejectEvent>, client: Client) {
-	for _event in events.iter() {
+	for _event in events.read() {
 		if let Ok(server_address) = client.server_address() {
 			info!("Rejected by server {}", server_address);
 		}

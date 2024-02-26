@@ -14,11 +14,11 @@ codegen-units = 1
 lto = "fat"
 
 [dependencies]
-bevy = { version = "0.11.x" }
-bevy-inspector-egui = { version = "0.20.x" }
-bevy_prototype_lyon = { version = "0.9.x" }
-naia-bevy-client = { version = "0.21.x", features = [ "transport_udp" ] }
-naia-bevy-server = { version = "0.21.x", features = [ "transport_udp" ] }
-naia-bevy-shared = { version = "0.21.x" }
+bevy = { version = "0.12.x" }
+bevy-inspector-egui = { version = "0.22.x" }
+bevy_prototype_lyon = { version = "0.10.x" }
+naia-bevy-client = { version = "0.22.x", features = [ "transport_udp" ] }
+naia-bevy-server = { version = "0.22.x", features = [ "transport_udp" ] }
+naia-bevy-shared = { version = "0.22.x" }
 parry2d = { version = "0.13.x", features = [ "enhanced-determinism" ] }
 pico-args = { version = "0.5.x", features = [ "eq-separator", "combined-flags", "short-space-opt" ] }

@@ -25,7 +25,7 @@ impl Plugin for NetServerPlugin {
 				ServerConfig::default(),
 				config::global_avg(), // TODO -- use actual TickConfig.interval
 			))
-			.add_schedule(TickSchedule::Network, single_thread_schedule())
+			.add_schedule(single_thread_schedule(TickSchedule::Network))
 			.add_systems(TickSchedule::Network, (
 				sys_event_auth,
 				sys_event_connect,
@@ -33,7 +33,7 @@ impl Plugin for NetServerPlugin {
 				sys_event_error,
 			))
 			.add_systems(TickSchedule::Tick, sys_event_msg)
-			.add_schedule(TickSchedule::InputSend, single_thread_schedule())
+			.add_schedule(single_thread_schedule(TickSchedule::InputSend))
 			.add_systems(TickSchedule::PreTicks, sys_consume_tick_events)
 			.add_systems(Update, sys_run_tick_schedules)
 			.add_systems(Startup, sys_start);
@@ -45,7 +45,7 @@ fn sys_consume_tick_events(
 	mut ticks: EventReader<TickEvent>,
 ) {
 	state.ticks_pending += ticks.len();
-	for t in ticks.iter() {
+	for t in ticks.read() {
 		state.cur_tick = t.0;
 		break;
 	}
@@ -73,7 +73,7 @@ pub fn sys_event_auth(
 	mut events: EventReader<AuthEvents>,
 	mut server: Server,
 ) {
-	for events in events.iter() {
+	for events in events.read() {
 		for (uid, auth) in events.read::<msg::Auth>() {
 			let user = server.user(&uid);
 
@@ -89,7 +89,7 @@ pub fn sys_event_connect<'world, 'state>(
 	global: Res<Global>,
 	mut server: Server,
 ) {
-	for ConnectEvent(uid) in events.iter() {
+	for ConnectEvent(uid) in events.read() {
 		let mut user = server.user_mut(uid);
 
 		info!("Client connected from {}", user.address());
@@ -103,7 +103,7 @@ pub fn sys_event_connect<'world, 'state>(
 pub fn sys_event_disconnect(
 	mut events: EventReader<DisconnectEvent>,
 ) {
-	for DisconnectEvent(_uid, user) in events.iter() {
+	for DisconnectEvent(_uid, user) in events.read() {
 		info!("Client disconnected from {}", user.address);
 	}
 }
@@ -111,7 +111,7 @@ pub fn sys_event_disconnect(
 pub fn sys_event_error(
 	mut events: EventReader<ErrorEvent>,
 ) {
-	for ErrorEvent(err) in events.iter() {
+	for ErrorEvent(err) in events.read() {
 		error!("{}", err);
 	}
 }

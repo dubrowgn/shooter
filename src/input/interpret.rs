@@ -40,7 +40,7 @@ pub fn sys_input_type	(
 	mut gamepad_events: EventReader<GamepadEvent>,
 	gamepads: Res<Gamepads>,
 ) {
-	for gamepad_event in gamepad_events.iter() {
+	for gamepad_event in gamepad_events.read() {
 		match gamepad_event {
 			GamepadEvent::Connection(connection_event) => {
 				if connection_event.connected() {
@@ -59,7 +59,7 @@ pub fn sys_input_type	(
 			}
 		}
 	}
-	if keyboard_input_events.iter().count() > 0 {
+	if keyboard_input_events.read().count() > 0 {
 		input.input_type = InputType::Keyboard;
 	}
 }

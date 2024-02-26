@@ -128,9 +128,12 @@ pub fn sys_collide_debug_add(
 				Name::new("CollidableDebug"),
 				ShapeBundle {
 					path: shape_to_path(col.shape.as_ref()),
-					transform: Transform::from_xyz(0.0, 0.0, Layer::FG)
-						.with_rotation(-t.rotation),
-					visibility: if debug.enabled { Visibility::Inherited } else { Visibility::Hidden },
+					spatial: SpatialBundle {
+						transform: Transform::from_xyz(0.0, 0.0, Layer::FG)
+							.with_rotation(-t.rotation),
+						visibility: if debug.enabled { Visibility::Inherited } else { Visibility::Hidden },
+						..default()
+					},
 					..default()
 				},
 				Stroke::new(Color::rgb(0.8, 0.8, 0.0), 1.0),

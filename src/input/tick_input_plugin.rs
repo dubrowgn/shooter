@@ -57,7 +57,7 @@ pub fn sys_collect_keyboard_events(
 ) {
 	// Avoid clearing if it's not empty to ensure change detection is not triggered.
 	keyboard.bypass_change_detection().keys.clear();
-	for event in events.iter() {
+	for event in events.read() {
 		if let Some(key_code) = event.key_code {
 			match event.state {
 				ButtonState::Pressed => keyboard.keys.press(key_code),
@@ -73,7 +73,7 @@ pub fn sys_collect_mouse_events(
     mut events: EventReader<MouseButtonInput>,
 ) {
     mouse.bypass_change_detection().buttons.clear();
-    for event in events.iter() {
+    for event in events.read() {
         match event.state {
             ButtonState::Pressed => mouse.buttons.press(event.button),
             ButtonState::Released => mouse.buttons.release(event.button),
@@ -88,7 +88,7 @@ pub fn sys_collect_gamepad_events(
     settings: Res<GamepadSettings>,
 ) {
 	gamepad.bypass_change_detection().buttons.clear();
-    for event in events.iter() {
+    for event in events.read() {
         let btn = GamepadButton::new(event.gamepad, event.button_type);
         let prop = settings.get_button_settings(btn);
 
