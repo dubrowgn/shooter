@@ -3,6 +3,7 @@
 #[macro_use]
 mod macros;
 
+mod animation;
 mod args;
 mod collide;
 mod debug;
@@ -15,6 +16,11 @@ mod net;
 mod tick_schedule;
 mod time;
 
+use animation::{
+	AnimationIndices,
+	AnimationTimer,
+	sys_animate_sprite,
+};
 use args::parse_args;
 use bevy::{
 	prelude::*,
@@ -121,6 +127,7 @@ fn main() {
 			sys_index_statics
 		)
 		.add_systems(Update, (
+			sys_animate_sprite,
 			sys_collide_debug_add,
 			sys_collide_debug_toggle,
 		))
@@ -300,17 +307,21 @@ fn sys_move_player(
 fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
 	let textures = &textures.0;
 
+	let animation_indicies = AnimationIndices { first: 0, last: 2, direction: 1 };
 	cmds.spawn((
 		Player::default(),
 		Name::new("Player"),
 		SpriteSheetBundle {
 			texture_atlas: textures.get("player_purple").unwrap().clone(),
+			sprite: TextureAtlasSprite::new(1),
 			transform: Transform::from_xyz(0.0, 0.0, Layer::PLAYER),
 			..default()
 		},
 		Collidable::circle(96.0),
 		Position::ZERO,
 		Velocity::ZERO,
+		animation_indicies,
+		AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating))
 	));
 }
 
@@ -594,7 +605,7 @@ fn sys_tps(mut metric: Local<Metric>, tick: Res<TickConfig>) {
 fn sys_apply_input(
 	input: Res<PlayerInput>,
 	mut debug: ResMut<Debug>,
-	mut q_player: Query<(&mut Velocity, &mut Transform, &mut Player)>,
+	mut q_player: Query<(&mut Velocity, &mut Transform, &mut AnimationTimer, &mut Player)>,
 	mut q_windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
 	let mut win = q_windows.single_mut();
@@ -610,7 +621,7 @@ fn sys_apply_input(
 		debug.enabled = input.debug;
 	}
 
-	let (mut player_v, mut player_t, mut player) = q_player.single_mut();
+	let (mut player_v, mut player_t, mut player_a, mut player) = q_player.single_mut();
 
 	// shooting
 
@@ -624,4 +635,12 @@ fn sys_apply_input(
 
 	player_v.v = 900.0f32 * input.dir;
 	player_t.rotation = Quat::from_rotation_z(input.face_turns * TURN_RADS);
+
+	// animation
+
+	if input.dir == Vec2::ZERO {
+		player_a.pause();
+	} else {
+		player_a.unpause();
+	}
 }
