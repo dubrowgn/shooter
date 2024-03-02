@@ -12,7 +12,7 @@ use std::time::Duration;
 use super::msg;
 
 // ~= 60fps
-const TICK_INTERVAL: Duration = Duration::from_nanos(16_666_667);
+pub const TICK_INTERVAL: Duration = Duration::from_nanos(16_666_667);
 
 #[derive(Channel)]
 pub struct PlayerCommandChannel;

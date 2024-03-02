@@ -61,6 +61,7 @@ pub fn sys_connect(mut client: Client) {
 	let addr = udp_sock_addr((127, 0, 0, 1), 5323);
 	let sock = udp::Socket::new(&addr, None);
 
+	info!("Connecting to server @ {}...", addr);
 	client.auth(msg::Auth::new("token-content"));
 	client.connect(sock);
 }

@@ -44,6 +44,7 @@ use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
 use net::{client::NetClientPlugin, server::NetServerPlugin};
 use parry2d::partitioning::Qbvh;
+use std::thread;
 use tick_schedule::{TickConfig, TickPlugin, TickSchedule};
 use time::Accumulator;
 
@@ -57,6 +58,14 @@ fn main() {
 	});
 
 	println!("{:?}", config);
+
+	if config.server == None {
+		thread::spawn(move || {
+			App::new()
+				.add_plugins(NetServerPlugin)
+				.run();
+		});
+	}
 
 	let mut app = App::new();
 
@@ -87,19 +96,13 @@ fn main() {
 			// InputOverridePlugin must come before DefaultPlugins
 			TickInputPlugin,
 			DefaultPlugins,
+			// TODO -- send endpoint config
+			NetClientPlugin,
 			ShapePlugin,
 			WorldInspectorPlugin::default()
 				.run_if(debug_enabled),
-		));
+		))
 
-	if config.server == None {
-		app.add_plugins(NetServerPlugin);
-	} else {
-		// TODO -- send endpoint config
-		app.add_plugins(NetClientPlugin);
-	}
-
-	app
 		// systems
 		.add_systems(Startup,	(
 			sys_window_setup,
