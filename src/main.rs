@@ -93,7 +93,7 @@ fn main() {
 		// plugins
 		.add_plugins((
 			TickPlugin,
-			// InputOverridePlugin must come before DefaultPlugins
+			// TickInputPlugin must come before DefaultPlugins
 			TickInputPlugin,
 			DefaultPlugins,
 			// TODO -- send endpoint config

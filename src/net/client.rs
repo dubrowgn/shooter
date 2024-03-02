@@ -4,7 +4,14 @@ use bevy::prelude::*;
 use naia_bevy_client::{
 	Client,
 	ClientConfig,
-	events::{ConnectEvent, DisconnectEvent, RejectEvent, ErrorEvent, ClientTickEvent},
+	events::{
+		ClientTickEvent,
+		ConnectEvent,
+		DisconnectEvent,
+		ErrorEvent,
+		RejectEvent,
+		ServerTickEvent,
+	},
 	Plugin as NaiaClientPlugin,
 	transport::udp,
 };
@@ -13,7 +20,13 @@ use super::{
 	msg,
 	peer::*,
 };
-use crate::{tick_schedule::{TickSchedule, single_thread_schedule}, input::interpret::PlayerInput};
+use crate::{
+	tick_schedule::{
+		TickSchedule,
+		single_thread_schedule,
+	},
+	input::interpret::PlayerInput,
+};
 
 pub struct NetClientPlugin;
 
@@ -23,7 +36,7 @@ impl Plugin for NetClientPlugin {
 			.insert_resource(TickState::default())
 			.add_plugins(NaiaClientPlugin::new(
 				ClientConfig::default(),
-				config::global_avg(), // TODO -- use actual TickConfig.interval
+				config::global_avg(),
 			))
 			.add_schedule(single_thread_schedule(TickSchedule::Network))
 			.add_systems(TickSchedule::Network, (
@@ -46,9 +59,8 @@ impl Plugin for NetClientPlugin {
 
 fn sys_consume_tick_events(
 	mut state: ResMut<TickState>,
-	mut ticks: EventReader<ClientTickEvent>,
+	mut ticks: EventReader<ServerTickEvent>,
 ) {
-	// FIXME -- input driven by client ticks, simulation driven by server ticks
 	state.ticks_pending += ticks.len();
 	for t in ticks.read() {
 		state.cur_tick = t.0;
@@ -96,15 +108,21 @@ pub fn sys_event_reject(mut events: EventReader<RejectEvent>, client: Client) {
 	}
 }
 
-pub fn sys_send_input(mut client: Client, input: Res<PlayerInput>, state: Res<TickState>) {
-	let cursor: Vec2 = Vec2::from_angle(input.face_turns * TAU);
-	let msg = msg::Input {
-		cursor_dx: cursor.x,
-		cursor_dy: cursor.y,
-		velocity_x: input.dir.x,
-		velocity_y: input.dir.y,
-		primary: input.primary,
-	};
-	//info!("sys_xmit_input {:?}: {:?}", state.cur_tick, msg);
-	client.send_tick_buffer_message::<PlayerCommandChannel, msg::Input>(&state.cur_tick, &msg);
+pub fn sys_send_input(
+	mut client: Client,
+	input: Res<PlayerInput>,
+	mut ticks: EventReader<ClientTickEvent>)
+{
+	for t in ticks.read() {
+		let cursor: Vec2 = Vec2::from_angle(input.face_turns * TAU);
+		let msg = msg::Input {
+			cursor_dx: cursor.x,
+			cursor_dy: cursor.y,
+			velocity_x: input.dir.x,
+			velocity_y: input.dir.y,
+			primary: input.primary,
+		};
+		//info!("sys_xmit_input {:?}: {:?}", state.cur_tick, msg);
+		client.send_tick_buffer_message::<PlayerCommandChannel, msg::Input>(&t.0, &msg);
+	}
 }
