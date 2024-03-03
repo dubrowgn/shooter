@@ -1,0 +1,4 @@
+group_imports = "one" # https://github.com/rust-lang/rustfmt/issues/5083
+hard_tabs = true
+imports_layout = "vertical" # https://github.com/rust-lang/rustfmt/issues/3361
+
