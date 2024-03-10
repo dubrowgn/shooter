@@ -70,7 +70,6 @@ pub struct ClientContext {
 }
 
 fn sys_consume_tick_events(
-	mut client: Client,
 	mut state: ResMut<TickState>,
 	mut ticks: EventReader<ServerTickEvent>,
 ) {
@@ -119,7 +118,7 @@ pub fn sys_event_error(mut events: EventReader<ErrorEvent>) {
 pub fn sys_event_msg(
 	mut ctx: ResMut<ClientContext>,
 	mut event_sets: EventReader<MessageEvents>,
-	mut players: Query<Entity, With<Player>>,
+	players: Query<Entity, With<Player>>,
 ) {
     for events in event_sets.read() {
 		info!("Received message events!");
