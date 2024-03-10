@@ -10,6 +10,7 @@ mod input;
 mod layer;
 mod metric;
 mod movement;
+mod player;
 mod net;
 mod tick_schedule;
 mod time;
@@ -44,6 +45,7 @@ use metric::Metric;
 use movement::{Position, sys_write_back, Velocity};
 use net::{client::NetClientPlugin, server::NetServerPlugin};
 use parry2d::partitioning::Qbvh;
+use player::Player;
 use std::thread;
 use tick_schedule::{TickConfig, TickPlugin, TickSchedule};
 use time::Accumulator;
@@ -293,12 +295,6 @@ fn sys_move_player(
 			}
 		}
 	}
-}
-
-#[derive(Component, Default, Reflect)]
-#[reflect(Component)]
-struct Player {
-	shot_acc: Option<Accumulator>,
 }
 
 fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {

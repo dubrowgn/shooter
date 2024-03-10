@@ -1,3 +1,6 @@
+mod assign;
+pub use assign::*;
+
 mod auth;
 pub use auth::*;
 

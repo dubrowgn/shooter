@@ -8,14 +8,16 @@ use naia_bevy_shared::{
 	ReliableSettings,
 };
 use std::time::Duration;
-
 use super::msg;
 
 // ~= 60fps
 pub const TICK_INTERVAL: Duration = Duration::from_nanos(16_666_667);
 
 #[derive(Channel)]
-pub struct PlayerCommandChannel;
+pub struct InputSrcChannel;
+
+#[derive(Channel)]
+pub struct CmdStreamChannel;
 
 #[derive(Channel)]
 pub struct EntityAssignmentChannel;
@@ -29,16 +31,22 @@ fn protocol(link_cond: Option<LinkConditionerConfig>) -> Protocol {
 
 	builder
 		.tick_interval(TICK_INTERVAL)
-		.add_channel::<PlayerCommandChannel>(
+		.add_channel::<InputSrcChannel>(
 			ChannelDirection::ClientToServer,
 			ChannelMode::TickBuffered(TickBufferSettings::default()),
+		)
+		.add_channel::<CmdStreamChannel>(
+			ChannelDirection::ServerToClient,
+			ChannelMode::OrderedReliable(ReliableSettings::default())
 		)
 		.add_channel::<EntityAssignmentChannel>(
 			ChannelDirection::ServerToClient,
 			ChannelMode::UnorderedReliable(ReliableSettings::default()),
 		)
+		.add_message::<msg::Assign>()
 		.add_message::<msg::Auth>()
 		.add_message::<msg::Input>()
+		.add_message::<msg::InputRepl>()
 		.build()
 }
 

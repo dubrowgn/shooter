@@ -1,31 +1,37 @@
-use std::f32::consts::TAU;
-
 use bevy::prelude::*;
+use crate::{
+	input::interpret::PlayerInput,
+	tick_schedule::{
+		TickSchedule,
+		single_thread_schedule,
+	},
+	player::Player,
+};
 use naia_bevy_client::{
-	Client,
-	ClientConfig,
 	events::{
 		ClientTickEvent,
 		ConnectEvent,
 		DisconnectEvent,
 		ErrorEvent,
+		MessageEvents,
 		RejectEvent,
 		ServerTickEvent,
 	},
-	Plugin as NaiaClientPlugin,
 	transport::udp,
+	Client,
+	ClientConfig,
+	Plugin as NaiaClientPlugin,
+};
+use std::{
+	collections::HashMap,
+	f32::consts::TAU,
 };
 use super::{
-	config::{self, PlayerCommandChannel},
-	msg,
-	peer::*,
-};
-use crate::{
-	tick_schedule::{
-		TickSchedule,
-		single_thread_schedule,
-	},
-	input::interpret::PlayerInput,
+	config::{
+		self,
+		CmdStreamChannel,
+		InputSrcChannel,
+	}, msg, peer::*
 };
 
 pub struct NetClientPlugin;
@@ -38,6 +44,7 @@ impl Plugin for NetClientPlugin {
 				ClientConfig::default(),
 				config::global_avg(),
 			))
+			.insert_resource(ClientContext::default())
 			.add_schedule(single_thread_schedule(TickSchedule::Network))
 			.add_systems(TickSchedule::Network, (
 				sys_event_connect,
@@ -57,7 +64,13 @@ impl Plugin for NetClientPlugin {
 	}
 }
 
+#[derive(Default, Resource)]
+pub struct ClientContext {
+    pub client_entities: HashMap<u32, Entity>,
+}
+
 fn sys_consume_tick_events(
+	mut client: Client,
 	mut state: ResMut<TickState>,
 	mut ticks: EventReader<ServerTickEvent>,
 ) {
@@ -78,7 +91,10 @@ pub fn sys_connect(mut client: Client) {
 	client.connect(sock);
 }
 
-pub fn sys_event_connect(mut events: EventReader<ConnectEvent>, client: Client) {
+pub fn sys_event_connect(
+	client: Client,
+	mut events: EventReader<ConnectEvent>,
+) {
 	for _event in events.read() {
 		if let Ok(server_address) = client.server_address() {
 			info!("Connected to server {}", server_address);
@@ -100,6 +116,27 @@ pub fn sys_event_error(mut events: EventReader<ErrorEvent>) {
 	}
 }
 
+pub fn sys_event_msg(
+	mut ctx: ResMut<ClientContext>,
+	mut event_sets: EventReader<MessageEvents>,
+	mut players: Query<Entity, With<Player>>,
+) {
+    for events in event_sets.read() {
+		info!("Received message events!");
+		for msg in events.read::<CmdStreamChannel, msg::Assign>() {
+			info!("sys_event_msg:{:?}", msg);
+
+			let player_ent = players.single();
+			ctx.client_entities.insert(msg.client_id, player_ent);
+		}
+		for msg in events.read::<CmdStreamChannel, msg::InputRepl>() {
+			//let player_ent = ctx.client_entities[&msg.client_id];
+			//players.get(player_ent).
+			info!("sys_event_msg:{:?}", msg);
+		}
+	}
+}
+
 pub fn sys_event_reject(mut events: EventReader<RejectEvent>, client: Client) {
 	for _event in events.read() {
 		if let Ok(server_address) = client.server_address() {
@@ -111,8 +148,8 @@ pub fn sys_event_reject(mut events: EventReader<RejectEvent>, client: Client) {
 pub fn sys_send_input(
 	mut client: Client,
 	input: Res<PlayerInput>,
-	mut ticks: EventReader<ClientTickEvent>)
-{
+	mut ticks: EventReader<ClientTickEvent>,
+) {
 	for t in ticks.read() {
 		let cursor: Vec2 = Vec2::from_angle(input.face_turns * TAU);
 		let msg = msg::Input {
@@ -123,6 +160,6 @@ pub fn sys_send_input(
 			primary: input.primary,
 		};
 		//info!("sys_xmit_input {:?}: {:?}", state.cur_tick, msg);
-		client.send_tick_buffer_message::<PlayerCommandChannel, msg::Input>(&t.0, &msg);
+		client.send_tick_buffer_message::<InputSrcChannel, msg::Input>(&t.0, &msg);
 	}
 }

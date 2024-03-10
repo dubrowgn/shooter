@@ -1,7 +1,3 @@
-use std::{
-	thread,
-	time::Instant,
-};
 use bevy::{
 	app::{RunMode, ScheduleRunnerPlugin},
 	prelude::*
@@ -13,9 +9,17 @@ use naia_bevy_server::{
 	Server,
 	ServerConfig,
 	transport::udp,
+	UserKey,
 };
+use std::{
+	collections::HashMap,
+	thread,
+	time::Instant
+};
+use crate::net::config::CmdStreamChannel;
+
 use super::{
-	config::{self, PlayerCommandChannel, TICK_INTERVAL},
+	config::{self, InputSrcChannel, TICK_INTERVAL},
 	msg,
 	peer::*,
 };
@@ -46,8 +50,10 @@ impl Plugin for NetServerPlugin {
 }
 
 #[derive(Resource)]
-pub struct Global {
-	room_key: RoomKey,
+pub struct ServerContext {
+	pub room: RoomKey,
+    pub client_ids: HashMap<UserKey, u32>,
+	pub next_client_id: u32,
 }
 
 pub fn sys_start(mut commands: Commands, mut server: Server) {
@@ -58,8 +64,10 @@ pub fn sys_start(mut commands: Commands, mut server: Server) {
 	server.listen(sock);
 
 	// Resources
-	commands.insert_resource(Global {
-		room_key: server.make_room().key(),
+	commands.insert_resource(ServerContext {
+		room: server.make_room().key(),
+		client_ids: HashMap::new(),
+		next_client_id: 1,
 	});
 }
 
@@ -95,15 +103,22 @@ pub fn sys_event_auth(
 
 pub fn sys_event_connect<'world, 'state>(
 	mut events: EventReader<ConnectEvent>,
-	global: Res<Global>,
+	mut ctx: ResMut<ServerContext>,
 	mut server: Server,
 ) {
 	for ConnectEvent(uid) in events.read() {
+		// assign client Id
+		let client_id = ctx.next_client_id;
+		ctx.next_client_id = client_id.wrapping_add(1);
+		ctx.client_ids.insert(*uid, client_id);
+
+		// send assignment
+		let msg = msg::Assign { client_id };
+		server.send_message::<CmdStreamChannel, msg::Assign>(uid, &msg);
+
 		let mut user = server.user_mut(uid);
-
 		println!("Client connected from {}", user.address());
-
-		user.enter_room(&global.room_key);
+		user.enter_room(&ctx.room);
 
 		// TODO -- send world state here
 	}
@@ -128,12 +143,14 @@ pub fn sys_event_error(
 pub fn sys_event_msg(
 	mut ticks: EventReader<TickEvent>,
 	mut server: Server,
+	ctx: Res<ServerContext>,
 ) {
 	for t in ticks.read() {
 		let mut messages = server.receive_tick_buffer_messages(&t.0);
-		for (uid, msg) in messages.read::<PlayerCommandChannel, msg::Input>() {
-			let user = server.user(&uid);
-			println!("Received {:?} from {}", msg, user.address());
+		for (uid, msg) in messages.read::<InputSrcChannel, msg::Input>() {
+			let msg = msg::InputRepl::new(ctx.client_ids[&uid], &msg);
+			//info!("sys_event_msg {:?}: {:?}", state.cur_tick, msg);
+			server.broadcast_message::<CmdStreamChannel, msg::InputRepl>(&msg);
 		}
 	}
 }
