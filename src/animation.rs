@@ -28,5 +28,8 @@ pub fn sys_animate_sprite(
             };
 			sprite.index = sprite.index.wrapping_add_signed(indices.direction)
         }
+        if timer.paused() {
+            sprite.index = 1
+        }
     }
 }

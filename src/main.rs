@@ -308,6 +308,8 @@ fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
 	let textures = &textures.0;
 
 	let animation_indicies = AnimationIndices { first: 0, last: 2, direction: 1 };
+	let mut animation_timer = AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating));
+	animation_timer.pause();
 	cmds.spawn((
 		Player::default(),
 		Name::new("Player"),
@@ -321,7 +323,7 @@ fn spawn_player(mut cmds: Commands, textures: Res<Textures>) {
 		Position::ZERO,
 		Velocity::ZERO,
 		animation_indicies,
-		AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating))
+		animation_timer
 	));
 }
 
