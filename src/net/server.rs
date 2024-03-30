@@ -11,6 +11,7 @@ use naia_bevy_server::{
 	transport::udp,
 	UserKey,
 };
+use naia_bevy_shared::ReceiveEvents;
 use std::{
 	collections::HashMap,
 	thread,
@@ -44,7 +45,7 @@ impl Plugin for NetServerPlugin {
 				sys_event_error,
 				sys_event_msg,
 				sys_sleep,
-			).chain())
+			).chain().in_set(ReceiveEvents))
 			.add_systems(Startup, sys_start);
 	}
 }

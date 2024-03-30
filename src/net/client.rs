@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use naia_bevy_shared::ReceiveEvents;
 use crate::{
 	input::interpret::PlayerInput,
 	tick_schedule::{
@@ -51,7 +52,7 @@ impl Plugin for NetClientPlugin {
 				sys_event_disconnect,
 				sys_event_error,
 				sys_event_reject,
-			))
+			).in_set(ReceiveEvents))
 			.add_systems(TickSchedule::PreTicks, (
 				sys_consume_tick_events,
 			))
