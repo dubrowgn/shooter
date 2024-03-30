@@ -39,11 +39,15 @@ use collide::{
 };
 use debug::{debug_enabled, Debug};
 use input::{
-	tick_input_plugin::TickInputPlugin,
 	interpret::{
 		PlayerInput,
 		sys_input_type,
 		sys_player_input,
+	},
+	tick_input_plugin::{
+		systems_tick_input_collect,
+		systems_input_gc,
+		TickInputApp,
 	},
 };
 use layer::Layer;
@@ -79,6 +83,7 @@ fn main() {
 
 	app
 		// types
+		.register_tick_input()
 		.register_type::<Accumulator>()
 		.register_type::<Player>()
 		.register_type::<PlayerInput>()
@@ -87,6 +92,7 @@ fn main() {
 		.register_type::<Velocity>()
 
 		// resources
+		.init_tick_input() // must come before DefaultPlugins
 		.insert_resource(ClearColor(Color::rgb(0.2, 0.2, 0.2)))
 		.insert_resource(Debug::default())
 		.insert_resource(PlayerInput::default())
@@ -101,8 +107,6 @@ fn main() {
 		// plugins
 		.add_plugins((
 			TickPlugin,
-			// TickInputPlugin must come before DefaultPlugins
-			TickInputPlugin,
 			DefaultPlugins,
 			// TODO -- send endpoint config
 			NetClientPlugin,
@@ -131,6 +135,8 @@ fn main() {
 			sys_collide_debug_add,
 			sys_collide_debug_toggle,
 		))
+		.add_systems(TickSchedule::InputCollect, systems_tick_input_collect())
+		.add_systems(Last, systems_input_gc())
 		.add_systems(TickSchedule::Tick, (
 			sys_tps,
 			(
