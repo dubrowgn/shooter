@@ -342,13 +342,14 @@ struct Shot {
 fn spawn_shot(
 	cmds: &mut Commands,
 	textures: &Res<Textures>,
+	sound: Handle<AudioSource>,
 	pos: Vec2,
 	dir: Vec2,
 ) {
 	let textures = &textures.0;
 	let speed: f32 = 2700.0;
 
-	cmds.spawn((
+	let shot = cmds.spawn((
 		Shot{ bounces: 3 },
 		Name::new("Shot"),
 		SpriteSheetBundle {
@@ -359,7 +360,16 @@ fn spawn_shot(
 		Collidable::circle(26.0),
 		Position::from(pos),
 		Velocity::from(dir * speed),
-	));
+	)).id();
+	let audio = cmds.spawn((
+		AudioBundle {
+			source: sound,
+			..default()
+		},
+	)).id();
+	cmds
+		.entity(shot)
+		.add_child(audio);
 }
 
 fn sys_spawn_shot(
@@ -369,36 +379,33 @@ fn sys_spawn_shot(
 	tick: Res<TickConfig>,
 	mut q_player: Query<(&Transform, &mut Player)>
 ) {
-	let sounds = &sounds.0;
 	let step_ns = tick.interval.as_nanos();
 
 	let (player_t, mut player) = q_player.single_mut();
 	let dir = player_t.right().truncate();
 	let pos = player_t.translation.truncate() + dir * (96.0 + 26.0);
 
+	let sound = sounds.0.get("laser/1").unwrap();
 	if let Some(acc) = &mut player.shot_acc {
 		for _ in acc.advance(step_ns as u64) {
-			spawn_shot(&mut cmds, &textures, pos, dir);
-			cmds.spawn((
-				AudioBundle {
-					source: sounds.get("laser/1").unwrap().clone(),
-					..default()
-				},
-			));
+			spawn_shot(&mut cmds, &textures, sound.clone(), pos, dir);
 		}
 	}
 }
 
 fn sys_spawn_shots(
 	mut cmds: Commands,
+	sounds: Res<Sounds>,
 	textures: Res<Textures>,
 ) {
+	let sound = sounds.0.get("laser/1").unwrap();
+
 	let half_range = 0;
 	for i in -half_range..half_range {
 		let f = 0.001 * i as f32;
 		let pos = Vec2::new(f, f);
 		let dir = Vec2::from_angle(f);
-		spawn_shot(&mut cmds, &textures, pos, dir);
+		spawn_shot(&mut cmds, &textures, sound.clone(), pos, dir);
 	}
 }
 
